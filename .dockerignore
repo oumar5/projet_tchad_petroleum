@@ -1,0 +1,89 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+ENV
+env.bak
+venv.bak
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Thumbs.db:encryptable
+
+# Documentation
+*.md
+docs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Logs
+*.log
+logs/
+
+# Model files (trop volumineux pour Docker)
+*.joblib
+*.model
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+
+# Data files (sensibles)
+*.csv
+*.xlsx
+*.xls
+*.json
+*.db
+*.sqlite
+
+# Backup files
+*.bak
+*.backup
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Streamlit
+.streamlit/secrets.toml

@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  streamlit-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tchad-petroleum-app
+    ports:
+      - "8501:8501"
+    volumes:
+      # Monter le dossier data pour persister les données
+      - ./data:/app/data:ro
+      # Optionnel: monter les logs
+      - ./logs:/app/logs
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  # Service optionnel pour une base de données si nécessaire
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: tchad-petroleum-db
+  #   environment:
+  #     POSTGRES_DB: petroleum_db
+  #     POSTGRES_USER: petroleum_user
+  #     POSTGRES_PASSWORD: petroleum_pass
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  # Volume pour les logs
+  logs:
+  # Volume optionnel pour la base de données
+  # postgres_data:
