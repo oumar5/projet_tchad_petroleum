@@ -4,7 +4,10 @@ import numpy as np
 from src.models.model_factory import ModelFactory
 from src.models.model_evaluator import ModelEvaluator
 from src.data_loader import split_data_for_validation
-from src.plotting import plot_model_performance_metrics, plot_failure_probability_timeline
+from src.plotting import (
+    plot_model_performance_metrics, plot_failure_probability_timeline,
+    display_plot_with_download, create_download_section
+)
 
 class MaintenanceUI:
     """Composant UI pour la maintenance prédictive."""
@@ -12,8 +15,6 @@ class MaintenanceUI:
     @staticmethod
     def render(production_df: pd.DataFrame, failures_df: pd.DataFrame, dependencies: dict):
         """Affiche l'interface de maintenance prédictive."""
-        st.header("🔧 Maintenance Prédictive des Pompes")
-        
         if failures_df.empty:
             st.warning("⚠️ Aucune donnée de panne disponible pour l'entraînement du modèle.")
             st.stop()
@@ -219,16 +220,26 @@ class MaintenanceUI:
         comparison_df = pd.DataFrame(comparison_data)
         st.dataframe(comparison_df, use_container_width=True)
         
-        # Graphiques de comparaison
+        # Graphiques de comparaison avec téléchargement
         col1, col2 = st.columns(2)
         with col1:
+            st.markdown("**Comparaison F1-Score**")
             fig_comp = evaluator.plot_model_comparison('f1_score')
-            st.pyplot(fig_comp)
+            display_plot_with_download(
+                fig_comp,
+                title="Comparaison_F1_Score_Maintenance",
+                key_prefix="maintenance_f1_comp"
+            )
         
         with col2:
             if len([r for r in results.values() if 'roc_auc' in r['metrics']]) > 1:
+                st.markdown("**Courbes ROC**")
                 fig_roc = evaluator.plot_roc_curve(list(results.keys()))
-                st.pyplot(fig_roc)
+                display_plot_with_download(
+                    fig_roc,
+                    title="Courbes_ROC_Maintenance",
+                    key_prefix="maintenance_roc_comp"
+                )
     
     @staticmethod
     def _render_detailed_analysis(results: dict, evaluator):

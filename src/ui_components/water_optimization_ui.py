@@ -11,8 +11,6 @@ class WaterOptimizationUI:
     @staticmethod
     def render(production_df: pd.DataFrame, dependencies: dict):
         """Affiche l'interface d'optimisation de l'injection d'eau."""
-        st.header("💧 Optimisation de l'Injection d'Eau")
-        
         # Sélection d'algorithmes
         selected_algorithms = WaterOptimizationUI._render_algorithm_selection(dependencies)
         

@@ -19,7 +19,10 @@ from src.ui_components import (
     HomeUI, MaintenanceUI, ForecastUI, WaterOptimizationUI, 
     ModelComparisonUI, DashboardUI, SidebarUI
 )
-from src.plotting import plot_daily_production, plot_failures_by_block
+from src.plotting import (
+    plot_daily_production, plot_failures_by_block, 
+    display_plot_with_download, create_download_section
+)
 
 # Chargement des données
 @st.cache_data
@@ -103,8 +106,13 @@ elif selected_page == "📈 Analyse de Production":
         with col4:
             st.metric("Nombre de jours", f"{len(filtered_df)} jours")
         
-        # Graphique
-        st.pyplot(plot_daily_production(filtered_df))
+        # Graphique avec téléchargement
+        fig = plot_daily_production(filtered_df)
+        display_plot_with_download(
+            fig, 
+            title="Production_Journaliere_Huile",
+            key_prefix="prod_analysis"
+        )
         
         # Données brutes si demandées
         if show_raw_data:
@@ -132,7 +140,12 @@ elif selected_page == "🔧 Analyse des Pannes":
         
         # Graphiques
         st.header("Répartition des pannes par bloc")
-        st.pyplot(plot_failures_by_block(failures_df))
+        fig_failures = plot_failures_by_block(failures_df)
+        display_plot_with_download(
+            fig_failures,
+            title="Repartition_Pannes_par_Bloc",
+            key_prefix="failures_analysis"
+        )
         
         # Historique
         st.header("Historique des pannes")
@@ -159,13 +172,6 @@ elif selected_page == "🔧 Analyse des Pannes":
         st.error("❌ Aucune donnée de panne disponible.")
 
 # Pages de modélisation prédictive
-elif selected_page == "🔮 Modélisation Prédictive":
-    # Cette option ne devrait pas apparaître avec la nouvelle navigation
-    st.redirect("🏠 Accueil")
-
-elif selected_page == "🏠 Accueil":
-    HomeUI.render(production_df, failures_df, interventions_df)
-
 elif selected_page == "🔧 Maintenance Prédictive":
     st.title("🔧 Maintenance Prédictive des Pompes")
     MaintenanceUI.render(production_df, failures_df, dependencies)

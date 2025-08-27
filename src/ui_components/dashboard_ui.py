@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from src.data_loader import calculate_production_kpis, calculate_failure_kpis
-from src.plotting import plot_kpi_dashboard
+from src.plotting import plot_kpi_dashboard, display_plot_with_download
 
 class DashboardUI:
     """Composant UI pour le dashboard des KPIs."""
@@ -10,8 +10,6 @@ class DashboardUI:
     @staticmethod
     def render(production_df: pd.DataFrame, failures_df: pd.DataFrame):
         """Affiche le dashboard des indicateurs de performance."""
-        st.header("📊 Dashboard des Indicateurs de Performance")
-        
         # Calculer les KPIs
         production_kpis = calculate_production_kpis(production_df)
         failure_kpis = calculate_failure_kpis(failures_df)
@@ -33,7 +31,11 @@ class DashboardUI:
         """Affiche le dashboard principal."""
         if production_kpis or failure_kpis:
             fig = plot_kpi_dashboard(production_kpis, failure_kpis)
-            st.pyplot(fig)
+            display_plot_with_download(
+                fig,
+                title="Dashboard_KPIs_Principal",
+                key_prefix="main_dashboard"
+            )
     
     @staticmethod
     def _render_detailed_kpis(production_kpis: dict, failure_kpis: dict):
@@ -203,4 +205,10 @@ class DashboardUI:
                 ax.tick_params(axis='x', rotation=45)
             
             plt.tight_layout()
-            st.pyplot(fig)
+            
+            # Afficher avec option de téléchargement
+            display_plot_with_download(
+                fig,
+                title="Tendances_Historiques_Production",
+                key_prefix="dashboard_trends"
+            )

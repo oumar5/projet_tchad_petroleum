@@ -14,8 +14,6 @@ class ForecastUI:
     @staticmethod
     def render(production_df: pd.DataFrame, dependencies: dict):
         """Affiche l'interface de prévision de production."""
-        st.header("📈 Prévision de Production d'Huile")
-        
         # Configuration et sélection d'algorithmes
         selected_algorithms, config = ForecastUI._render_algorithm_selection(dependencies)
         

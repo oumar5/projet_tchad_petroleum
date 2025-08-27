@@ -7,8 +7,6 @@ class ModelComparisonUI:
     @staticmethod
     def render():
         """Affiche l'interface de comparaison de modèles."""
-        st.header("📊 Comparaison Avancée de Modèles")
-        
         # Vérifier s'il y a des résultats à comparer
         available_results = ModelComparisonUI._get_available_results()
         
