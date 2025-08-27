@@ -14,61 +14,62 @@ class SidebarUI:
         Returns:
             str: Le type de modèle sélectionné
         """
-        # Configuration de la sidebar
+        # En-tête moderne et compact
         st.sidebar.markdown("""
-        <div style='text-align: center; padding: 10px; background: linear-gradient(90deg, #1f4e79, #2e8b57); border-radius: 10px; margin-bottom: 20px;'>
-            <h2 style='color: white; margin: 0;'>🛢️ Tchad Petroleum</h2>
-            <p style='color: #e0e0e0; margin: 5px 0 0 0; font-size: 14px;'>Système d'Analyse Prédictive</p>
+        <div style='text-align: center; padding: 15px; background: linear-gradient(135deg, #1f4e79, #2e8b57); border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);'>
+            <h2 style='color: white; margin: 0; font-size: 1.8rem; font-weight: 600;'>🛢️ Tchad Petroleum</h2>
+            <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 13px; font-weight: 400;'>Intelligence Artificielle • Analyse Prédictive</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Informations sur les données
-        SidebarUI._render_data_status(production_df, failures_df)
+        # Statut des données en premier (information critique)
+        SidebarUI._render_data_status_compact(production_df, failures_df)
         
-        # Navigation principale
-        st.sidebar.markdown("### 🎯 Navigation Principale")
+        # Navigation principale simplifiée
+        st.sidebar.markdown("### 🧭 Navigation")
         
-        # Options de navigation avec descriptions
+        # Options de navigation regroupées logiquement
         nav_options = {
-            "🏠 Accueil": {
-                "description": "Vue d'ensemble et configuration",
-                "icon": "🏠",
+            "🏠 Tableau de Bord": {
+                "description": "Vue d'ensemble et KPIs",
+                "category": "main",
                 "status": "ready"
             },
-            "📈 Analyse de Production": {
-                "description": "Visualisation des données de production",
-                "icon": "📈",
+            "📊 Analyse des Données": {
+                "description": "Production et pannes",
+                "category": "analysis", 
                 "status": "ready" if not production_df.empty else "warning"
             },
-            "🔧 Analyse des Pannes": {
-                "description": "Historique et répartition des pannes",
-                "icon": "🔧",
-                "status": "ready" if not failures_df.empty else "warning"
-            },
-            "🔮 Modélisation Prédictive": {
-                "description": "Modèles ML avancés",
-                "icon": "🔮",
+            "🤖 Intelligence Artificielle": {
+                "description": "Modèles prédictifs",
+                "category": "ai",
                 "status": "ready"
             },
             "📚 Documentation": {
-                "description": "Guides et documentation technique",
-                "icon": "📚",
+                "description": "Guides et aide",
+                "category": "help",
                 "status": "ready"
             }
         }
         
-        # Sélection avec radio buttons stylisés
+        # Sélection avec interface améliorée
         selected_page = st.sidebar.radio(
-            "Sélectionnez une section :",
+            "Choisissez une section :",
             list(nav_options.keys()),
-            format_func=lambda x: SidebarUI._format_nav_option(x, nav_options[x]),
-            key="main_navigation"
+            format_func=lambda x: SidebarUI._format_nav_option_modern(x, nav_options[x]),
+            key="main_navigation",
+            help="Naviguez entre les différentes sections de l'application"
         )
         
-        # Navigation secondaire pour la modélisation prédictive
-        if selected_page == "🔮 Modélisation Prédictive":
-            selected_model = SidebarUI._render_ml_navigation()
-            return selected_model
+        # Sous-navigation contextuelle
+        if selected_page == "📊 Analyse des Données":
+            selected_analysis = SidebarUI._render_analysis_navigation(production_df, failures_df)
+            return selected_analysis
+        elif selected_page == "🤖 Intelligence Artificielle":
+            selected_ai = SidebarUI._render_ai_navigation()
+            return selected_ai
+        elif selected_page == "🏠 Tableau de Bord":
+            return "🏠 Accueil"
         
         return selected_page
     
@@ -180,8 +181,193 @@ class SidebarUI:
         """, unsafe_allow_html=True)
     
     @staticmethod
+    def _render_data_status_compact(production_df: pd.DataFrame, failures_df: pd.DataFrame):
+        """Affiche un statut compact des données."""
+        st.sidebar.markdown("### 📊 État des Données")
+        
+        # Calcul des métriques
+        prod_count = len(production_df) if not production_df.empty else 0
+        failure_count = len(failures_df) if not failures_df.empty else 0
+        
+        # Période des données
+        if not production_df.empty:
+            date_range = production_df['Date'].max() - production_df['Date'].min()
+            period_days = date_range.days
+        else:
+            period_days = 0
+        
+        # Affichage en colonnes
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            st.metric(
+                "📈 Production",
+                f"{prod_count:,}",
+                help="Nombre de points de données de production"
+            )
+        
+        with col2:
+            st.metric(
+                "🔧 Pannes",
+                f"{failure_count}",
+                help="Nombre d'événements de panne enregistrés"
+            )
+        
+        # Période en bas
+        if period_days > 0:
+            st.sidebar.info(f"📅 **Période couverte :** {period_days} jours")
+        else:
+            st.sidebar.warning("⚠️ Aucune donnée disponible")
+    
+    @staticmethod
+    def _format_nav_option_modern(option: str, config: Dict[str, Any]) -> str:
+        """Formate les options de navigation avec style moderne."""
+        status_icons = {
+            "ready": "✅",
+            "warning": "⚠️",
+            "error": "❌"
+        }
+        
+        status_icon = status_icons.get(config["status"], "⚪")
+        description = config.get("description", "")
+        
+        return f"{option}\n{description}"
+    
+    @staticmethod
+    def _render_analysis_navigation(production_df: pd.DataFrame, failures_df: pd.DataFrame) -> str:
+        """Affiche la navigation pour l'analyse des données."""
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("#### 📊 Type d'Analyse")
+        
+        analysis_options = {
+            "📈 Production": {
+                "available": not production_df.empty,
+                "description": "Analyse de la production d'huile"
+            },
+            "🔧 Pannes": {
+                "available": not failures_df.empty,
+                "description": "Historique des pannes"
+            }
+        }
+        
+        # Sélection du type d'analyse
+        available_options = []
+        for option, config in analysis_options.items():
+            if config["available"]:
+                available_options.append(option)
+            else:
+                st.sidebar.warning(f"⚠️ {option} : Données non disponibles")
+        
+        if available_options:
+            selected_analysis = st.sidebar.radio(
+                "Choisissez le type d'analyse :",
+                available_options,
+                key="analysis_type"
+            )
+            
+            # Mapper vers les noms de pages originaux
+            mapping = {
+                "📈 Production": "📈 Analyse de Production",
+                "🔧 Pannes": "🔧 Analyse des Pannes"
+            }
+            
+            return mapping.get(selected_analysis, selected_analysis)
+        else:
+            st.sidebar.error("❌ Aucune donnée disponible pour l'analyse")
+            return "🏠 Accueil"
+    
+    @staticmethod
+    def _render_ai_navigation() -> str:
+        """Affiche la navigation pour l'IA avec interface moderne."""
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("#### 🤖 Modules IA")
+        
+        # Vérification des dépendances
+        dependencies = ModelFactory.check_dependencies()
+        
+        # Options IA organisées par catégorie
+        ai_categories = {
+            "🏠 Vue d'Ensemble": {
+                "description": "Dashboard et configuration",
+                "status": "ready",
+                "deps": []
+            },
+            "🔧 Maintenance Prédictive": {
+                "description": "Prédiction des pannes",
+                "status": "ready",
+                "deps": ["scikit-learn"]
+            },
+            "📈 Prévision Production": {
+                "description": "Prédiction de production",
+                "status": "ready" if dependencies.get('prophet', False) else "warning",
+                "deps": ["prophet"]
+            },
+            "💧 Optimisation Injection": {
+                "description": "Optimisation des paramètres",
+                "status": "ready",
+                "deps": ["scikit-learn"]
+            },
+            "📊 Comparaison Modèles": {
+                "description": "Analyse comparative",
+                "status": "ready",
+                "deps": []
+            }
+        }
+        
+        # Sélection avec statut des dépendances
+        selected_ai = st.sidebar.selectbox(
+            "Sélectionnez un module IA :",
+            list(ai_categories.keys()),
+            format_func=lambda x: SidebarUI._format_ai_option(x, ai_categories[x], dependencies),
+            key="ai_module"
+        )
+        
+        # Affichage des informations du module
+        if selected_ai in ai_categories:
+            config = ai_categories[selected_ai]
+            SidebarUI._render_ai_module_info(config, dependencies)
+        
+        # Mapper vers les noms de pages originaux
+        mapping = {
+            "🏠 Vue d'Ensemble": "🏠 Accueil",
+            "🔧 Maintenance Prédictive": "🔧 Maintenance Prédictive",
+            "📈 Prévision Production": "📈 Prévision de Production",
+            "💧 Optimisation Injection": "💧 Optimisation Injection d'Eau",
+            "📊 Comparaison Modèles": "📊 Comparaison de Modèles"
+        }
+        
+        return mapping.get(selected_ai, selected_ai)
+    
+    @staticmethod
+    def _format_ai_option(option: str, config: Dict[str, Any], dependencies: Dict[str, bool]) -> str:
+        """Formate les options IA avec statut des dépendances."""
+        # Vérifier les dépendances
+        deps_ok = all(dependencies.get(dep, True) for dep in config["deps"] if dep in dependencies)
+        
+        if not config["deps"] or deps_ok:
+            status_icon = "✅"
+        else:
+            status_icon = "⚠️"
+        
+        return f"{status_icon} {option}"
+    
+    @staticmethod
+    def _render_ai_module_info(config: Dict[str, Any], dependencies: Dict[str, bool]):
+        """Affiche les informations sur le module IA sélectionné."""
+        # Description du module
+        st.sidebar.info(f"💡 {config['description']}")
+        
+        # Statut des dépendances si nécessaire
+        if config["deps"]:
+            missing_deps = [dep for dep in config["deps"] if not dependencies.get(dep, True)]
+            if missing_deps:
+                st.sidebar.warning(f"⚠️ Dépendances manquantes : {', '.join(missing_deps)}")
+            else:
+                st.sidebar.success("✅ Toutes les dépendances sont disponibles")
+    
+    @staticmethod
     def _format_nav_option(option: str, config: Dict[str, Any]) -> str:
-        """Formate les options de navigation avec statut."""
+        """Formate les options de navigation avec statut (méthode legacy)."""
         status_icon = {
             "ready": "🟢",
             "warning": "🟡",
@@ -304,47 +490,43 @@ class SidebarUI:
     
     @staticmethod
     def render_quick_actions():
-        """Affiche des actions rapides dans la sidebar."""
+        """Affiche des actions rapides modernes dans la sidebar."""
         st.sidebar.markdown("---")
         st.sidebar.markdown("### ⚡ Actions Rapides")
         
-        col1, col2 = st.sidebar.columns(2)
+        # Actions principales en boutons complets
+        if st.sidebar.button("🔄 Actualiser les Données", key="refresh_data", use_container_width=True, help="Recharger toutes les données et vider le cache"):
+            st.cache_data.clear()
+            st.rerun()
         
-        with col1:
-            if st.button("🔄 Actualiser", key="refresh_data"):
-                st.cache_data.clear()
-                st.rerun()
-        
-        with col2:
-            if st.button("📥 Export", key="export_data"):
-                st.sidebar.success("Export en cours...")
-        
-        # Accès rapide à la documentation
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📚 Accès Rapide")
-        
-        if st.sidebar.button("📖 Ouvrir Documentation", key="open_docs_main", use_container_width=True):
+        if st.sidebar.button("📖 Ouvrir Documentation", key="open_docs_main", use_container_width=True, help="Accéder aux guides et à la documentation"):
             st.session_state['selected_doc_page'] = True
             st.rerun()
         
-        # Informations sur la documentation disponible
-        st.sidebar.markdown("""
-        **Documentation Disponible :**
-        • Guide Utilisateur
-        • Architecture Système
-        • Modèles Prédictifs
-        • Interface UI
-        • Guide Développement
-        • Guide Déploiement
-        • Collecte des Données
-        • Nettoyage des Données
-        """)
-        
-        # Footer de la sidebar
+        # Informations système compactes
         st.sidebar.markdown("---")
+        
+        # Statut système en expander
+        with st.sidebar.expander("ℹ️ Informations Système"):
+            st.markdown("""
+            **Version :** 2.0.0  
+            **Architecture :** Modulaire  
+            **IA :** Modèles Multiples  
+            **Interface :** Streamlit  
+            
+            **Documentation Disponible :**
+            • Guide Utilisateur Complet
+            • Architecture Technique
+            • Modèles d'IA et ML
+            • Interface et Visualisations
+            • Guide de Développement
+            • Déploiement et Production
+            """)
+        
+        # Footer moderne et compact
         st.sidebar.markdown("""
-        <div style='text-align: center; color: #666; font-size: 12px;'>
-            <p>v2.0.0 • Architecture Modulaire</p>
-            <p>Développé avec ❤️</p>
+        <div style='text-align: center; margin-top: 20px; padding: 10px; background: rgba(0,0,0,0.05); border-radius: 8px;'>
+            <p style='margin: 0; color: #666; font-size: 11px; font-weight: 500;'>🛢️ Tchad Petroleum • v2.0</p>
+            <p style='margin: 0; color: #888; font-size: 10px;'>Développé avec ❤️ • IA & Analytics</p>
         </div>
         """, unsafe_allow_html=True)
