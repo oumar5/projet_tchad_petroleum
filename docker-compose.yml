@@ -9,16 +9,31 @@ services:
     ports:
       - "8501:8501"
     volumes:
+      # Monter le code source pour le hot reload et debugging
+      - ./src:/app/src
+      - ./app.py:/app/app.py
+      - ./requirements.txt:/app/requirements.txt
       # Monter le dossier data pour persister les données
       - ./data:/app/data:ro
-      # Optionnel: monter les logs
+      # Monter les logs pour debugging
       - ./logs:/app/logs
+      # Monter les tests pour debugging
+      - ./tests:/app/tests
+      # Monter les docs pour référence
+      - ./docs:/app/docs:ro
     environment:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - STREAMLIT_SERVER_RUN_ON_SAVE=true
+      - STREAMLIT_SERVER_FILE_WATCHER_TYPE=auto
       - PYTHONPATH=/app
+      # Variables pour debugging
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      # Variables pour logging
+      - LOG_LEVEL=DEBUG
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
