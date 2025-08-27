@@ -225,10 +225,19 @@ class ForecastUI:
                 if y_pred is None or len(y_pred) == 0:
                     raise ValueError(f"Prédictions vides pour {algorithm}")
                 
-                # Récupérer X_test depuis les résultats d'entraînement
-                X_test = train_results.get('X_test', None)
-                if X_test is None:
-                    raise ValueError(f"X_test non disponible dans les résultats d'entraînement pour {algorithm}")
+                # Récupérer les données de test selon le type de modèle
+                if algorithm in ['prophet', 'neuralprophet', 'prophet_timeseries', 'neuralprophet_timeseries']:
+                    # Pour Prophet : utiliser test_data qui contient ds et y
+                    test_data = train_results.get('test_data', None)
+                    if test_data is None:
+                        raise ValueError(f"test_data non disponible dans les résultats d'entraînement pour {algorithm}")
+                    X_test = test_data
+                    y_test = test_data['y'] if 'y' in test_data.columns else y_test
+                else:
+                    # Pour les modèles classiques : utiliser X_test
+                    X_test = train_results.get('X_test', None)
+                    if X_test is None:
+                        raise ValueError(f"X_test non disponible dans les résultats d'entraînement pour {algorithm}")
                 
                 metrics = evaluator.evaluate_model(model, X_test, y_test, algorithm)
                 

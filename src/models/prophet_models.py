@@ -224,7 +224,45 @@ class ProphetModels(BaseModel):
         
         return NeuralProphet(**model_params)
     
-    def predict(self, periods: int = 30, **kwargs) -> np.ndarray:
+    def predict(self, periods_or_data = 30, **kwargs) -> np.ndarray:
+        """
+        Fait des prédictions avec Prophet/NeuralProphet.
+        
+        Args:
+            periods_or_data: Soit un entier (nombre de périodes futures),
+                           soit un DataFrame (données de test pour évaluation)
+            **kwargs: Arguments supplémentaires
+            
+        Returns:
+            Array des prédictions
+        """
+        # Si c'est un DataFrame, c'est pour l'évaluation sur des données de test
+        if isinstance(periods_or_data, pd.DataFrame):
+            return self._predict_on_test_data(periods_or_data, **kwargs)
+        
+        # Sinon, c'est pour des prédictions futures
+        periods = periods_or_data
+        return self._predict_future_periods(periods, **kwargs)
+    
+    def _predict_on_test_data(self, test_data: pd.DataFrame, **kwargs) -> np.ndarray:
+        """
+        Fait des prédictions sur des données de test existantes.
+        """
+        if not self.is_trained:
+            raise ValueError("Le modèle doit être entraîné avant de faire des prédictions.")
+        
+        try:
+            # Utiliser les données de test pour les prédictions
+            if self.algorithm == 'prophet':
+                forecast = self.model.predict(test_data)
+                return forecast['yhat'].values
+            else:  # neuralprophet
+                forecast = self.model.predict(test_data)
+                return forecast['yhat1'].values
+        except Exception as e:
+            raise ValueError(f"Erreur lors de la prédiction sur données de test: {e}")
+    
+    def _predict_future_periods(self, periods: int = 30, **kwargs) -> np.ndarray:
         """
         Fait des prédictions futures.
         
@@ -233,7 +271,7 @@ class ProphetModels(BaseModel):
             **kwargs: Arguments supplémentaires
             
         Returns:
-            Array des prédictions
+            Array des prédictions futures
         """
         if not self.is_trained:
             raise ValueError("Le modèle doit être entraîné avant de faire des prédictions.")

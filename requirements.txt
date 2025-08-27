@@ -1,33 +1,33 @@
 # Interface utilisateur
-streamlit>=1.28.0
+streamlit
 
 # Manipulation de données
-pandas>=2.0.0
-numpy>=1.24.0
-openpyxl>=3.1.0
+pandas
+numpy
+openpyxl
 
 # Visualisation
-matplotlib>=3.7.0
-seaborn>=0.12.0
-plotly>=5.17.0
-kaleido>=0.2.1
+matplotlib
+seaborn
+plotly
+kaleido
 
 # Machine Learning - Base
-scikit-learn>=1.3.0
-joblib>=1.3.0
+scikit-learn
+joblib
 
 # Machine Learning - Avancé
-xgboost>=1.7.0
+xgboost
 
 # Séries Temporelles
-prophet>=1.1.4
-neuralprophet>=0.6.0
+prophet
+neuralprophet
 
 # Explainabilité (optionnel)
-shap>=0.42.0
+shap
 
 # Utilitaires scientifiques
-scipy>=1.11.0
+scipy
 
 # Optimisation
-optuna>=3.3.0
+optuna
