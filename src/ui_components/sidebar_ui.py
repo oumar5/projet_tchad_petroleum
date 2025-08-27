@@ -49,6 +49,11 @@ class SidebarUI:
                 "description": "Modèles ML avancés",
                 "icon": "🔮",
                 "status": "ready"
+            },
+            "📚 Documentation": {
+                "description": "Guides et documentation technique",
+                "icon": "📚",
+                "status": "ready"
             }
         }
         
@@ -314,14 +319,25 @@ class SidebarUI:
             if st.button("📥 Export", key="export_data"):
                 st.sidebar.success("Export en cours...")
         
-        # Lien vers la documentation
+        # Accès rapide à la documentation
         st.sidebar.markdown("---")
+        st.sidebar.markdown("### 📚 Accès Rapide")
+        
+        if st.sidebar.button("📖 Ouvrir Documentation", key="open_docs_main", use_container_width=True):
+            st.session_state['selected_doc_page'] = True
+            st.rerun()
+        
+        # Informations sur la documentation disponible
         st.sidebar.markdown("""
-        ### 📚 Ressources
-        - [📖 Documentation](docs/)
-        - [🏗️ Architecture](docs/architecture.md)
-        - [🤖 Modèles](docs/models.md)
-        - [🐳 Docker](docs/docker.md)
+        **Documentation Disponible :**
+        • Guide Utilisateur
+        • Architecture Système
+        • Modèles Prédictifs
+        • Interface UI
+        • Guide Développement
+        • Guide Déploiement
+        • Collecte des Données
+        • Nettoyage des Données
         """)
         
         # Footer de la sidebar

@@ -19,6 +19,7 @@ from src.ui_components import (
     HomeUI, MaintenanceUI, ForecastUI, WaterOptimizationUI, 
     ModelComparisonUI, DashboardUI, SidebarUI
 )
+from src.ui_components.documentation_ui import DocumentationUI
 from src.plotting import (
     plot_daily_production, plot_failures_by_block, 
     display_plot_with_download, create_download_section
@@ -48,8 +49,16 @@ selected_page = SidebarUI.render(production_df, failures_df)
 # Actions rapides dans la sidebar
 SidebarUI.render_quick_actions()
 
+# Vérification si documentation demandée via bouton
+if st.session_state.get('selected_doc_page', False):
+    DocumentationUI.render()
+    # Bouton pour revenir
+    if st.button("← Retour à l'application", key="back_to_app"):
+        st.session_state['selected_doc_page'] = False
+        st.rerun()
+
 # Routage vers les pages appropriées
-if selected_page == "🏠 Accueil":
+elif selected_page == "🏠 Accueil":
     st.title("🏠 Accueil - Tchad Petroleum")
     st.markdown("""
     ## 🛢️ Bienvenue dans le Système d'Analyse Prédictive
@@ -191,6 +200,9 @@ elif selected_page == "📊 Comparaison de Modèles":
 elif selected_page == "📋 Dashboard KPIs":
     st.title("📋 Dashboard des Indicateurs de Performance")
     DashboardUI.render(production_df, failures_df)
+
+elif selected_page == "📚 Documentation":
+    DocumentationUI.render()
 
 # Footer global
 st.markdown("---")
