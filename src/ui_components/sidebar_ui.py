@@ -70,6 +70,41 @@ class SidebarUI:
     @staticmethod
     def _render_data_status(production_df: pd.DataFrame, failures_df: pd.DataFrame):
         """Affiche le statut des données dans la sidebar."""
+        # Ajouter CSS pour l'adaptation au mode sombre
+        st.sidebar.markdown("""
+        <style>
+        :root {
+            --background-color: rgba(240, 242, 246, 0.8);
+            --border-color: rgba(0, 0, 0, 0.1);
+            --text-color: #262730;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
+        }
+        
+        [data-theme="dark"] {
+            --background-color: rgba(38, 39, 48, 0.8);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --text-color: #fafafa;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --info-color: #2196f3;
+        }
+        
+        /* Détection automatique du mode sombre */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background-color: rgba(38, 39, 48, 0.8);
+                --border-color: rgba(255, 255, 255, 0.1);
+                --text-color: #fafafa;
+                --success-color: #4caf50;
+                --warning-color: #ff9800;
+                --info-color: #2196f3;
+            }
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         st.sidebar.markdown("### 📊 Statut des Données")
         
         # Statut production
@@ -87,22 +122,56 @@ class SidebarUI:
         else:
             period_text = "N/A"
         
-        # Affichage compact
+        # Affichage compact avec adaptation au mode sombre
         st.sidebar.markdown(f"""
-        <div style='background: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 15px;'>
-            <div style='display: flex; justify-content: space-between; margin-bottom: 5px;'>
-                <span>📈 Production:</span>
-                <span>{prod_status} {prod_count:,} pts</span>
+        <div class='data-status-card' style='background: var(--background-color, rgba(240, 242, 246, 0.9)); 
+                    backdrop-filter: blur(10px); 
+                    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1)); 
+                    padding: 12px; 
+                    border-radius: 8px; 
+                    margin-bottom: 15px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    transition: all 0.3s ease;'>
+            <div style='display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-color, inherit);'>
+                <span style='font-weight: 500; opacity: 0.9;'>📈 Production:</span>
+                <span style='font-weight: 600; color: var(--success-color, #28a745);'>{prod_status} {prod_count:,} pts</span>
             </div>
-            <div style='display: flex; justify-content: space-between; margin-bottom: 5px;'>
-                <span>🔧 Pannes:</span>
-                <span>{failure_status} {failure_count} evt</span>
+            <div style='display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-color, inherit);'>
+                <span style='font-weight: 500; opacity: 0.9;'>🔧 Pannes:</span>
+                <span style='font-weight: 600; color: var(--warning-color, #ffc107);'>{failure_status} {failure_count} evt</span>
             </div>
-            <div style='display: flex; justify-content: space-between;'>
-                <span>📅 Période:</span>
-                <span>{period_text}</span>
+            <div style='display: flex; justify-content: space-between; color: var(--text-color, inherit);'>
+                <span style='font-weight: 500; opacity: 0.9;'>📅 Période:</span>
+                <span style='font-weight: 600; color: var(--info-color, #17a2b8);'>{period_text}</span>
             </div>
         </div>
+        
+        <style>
+        /* Styles spécifiques pour le mode sombre de Streamlit */
+        .stApp[data-theme='dark'] .data-status-card,
+        .stApp.dark-theme .data-status-card {{
+            background: rgba(38, 39, 48, 0.9) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #fafafa !important;
+        }}
+        
+        .stApp[data-theme='dark'] .data-status-card span,
+        .stApp.dark-theme .data-status-card span {{
+            color: #fafafa !important;
+        }}
+        
+        /* Détection automatique du mode sombre du système */
+        @media (prefers-color-scheme: dark) {{
+            .data-status-card {{
+                background: rgba(38, 39, 48, 0.9) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                color: #fafafa !important;
+            }}
+            .data-status-card span {{
+                color: #fafafa !important;
+            }}
+        }}
+        </style>
         """, unsafe_allow_html=True)
     
     @staticmethod
