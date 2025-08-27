@@ -6,6 +6,7 @@ from .water_optimization_ui import WaterOptimizationUI
 from .model_comparison_ui import ModelComparisonUI
 from .dashboard_ui import DashboardUI
 from .home_ui import HomeUI
+from .sidebar_ui import SidebarUI
 
 __all__ = [
     'MaintenanceUI',
@@ -13,5 +14,6 @@ __all__ = [
     'WaterOptimizationUI',
     'ModelComparisonUI',
     'DashboardUI',
-    'HomeUI'
+    'HomeUI',
+    'SidebarUI'
 ]

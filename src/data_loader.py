@@ -47,18 +47,32 @@ def load_pump_failures_data():
 def load_interventions_data():
     """Charge les données sur les interventions."""
     try:
+        # Vérifier d'abord si la feuille existe
+        excel_file = pd.ExcelFile(DATA_PATH + "Données de production Rev.xlsx")
+        if "Interventions" not in excel_file.sheet_names:
+            # Créer un DataFrame vide avec des colonnes par défaut
+            return pd.DataFrame(columns=['Date', 'Type_Intervention', 'Description', 'Bloc'])
+        
         df = pd.read_excel(
             DATA_PATH + "Données de production Rev.xlsx",
             sheet_name="Interventions"
         )
+        
         # Convertir les colonnes de date si elles existent
         date_columns = [col for col in df.columns if 'date' in col.lower() or 'Date' in col]
         for col in date_columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
         return df
+    except FileNotFoundError:
+        st.error("Fichier Excel non trouvé dans le dossier `data/`.")
+        return pd.DataFrame(columns=['Date', 'Type_Intervention', 'Description', 'Bloc'])
     except Exception as e:
-        st.warning(f"Impossible de charger les données d'interventions: {e}")
-        return pd.DataFrame()
+        # Log l'erreur sans afficher d'avertissement à l'utilisateur pour les feuilles manquantes
+        if "Worksheet named 'Interventions' not found" in str(e):
+            return pd.DataFrame(columns=['Date', 'Type_Intervention', 'Description', 'Bloc'])
+        else:
+            st.warning(f"Erreur lors du chargement des interventions: {e}")
+            return pd.DataFrame(columns=['Date', 'Type_Intervention', 'Description', 'Bloc'])
 
 @st.cache_data
 def load_well_data():

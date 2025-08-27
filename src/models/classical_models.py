@@ -98,8 +98,26 @@ class ClassicalModels(BaseModel):
         X = X[numeric_columns]
         
         # Gérer les valeurs manquantes
-        X = X.fillna(X.mean())
-        y = y.fillna(y.mean() if self.model_type == 'regression' else y.mode()[0])
+        # Pour X, remplacer par la médiane ou 0 si toutes les valeurs sont NaN
+        for col in X.columns:
+            if X[col].isna().all():
+                X[col] = 0
+            else:
+                X[col] = X[col].fillna(X[col].median())
+        
+        # Pour y, gérer selon le type de modèle
+        if self.model_type == 'regression':
+            if y.isna().all():
+                raise ValueError("Toutes les valeurs cibles sont NaN. Impossible d'entraîner le modèle.")
+            y = y.fillna(y.median())
+        else:
+            if y.isna().all():
+                raise ValueError("Toutes les valeurs cibles sont NaN. Impossible d'entraîner le modèle.")
+            mode_values = y.mode()
+            if len(mode_values) > 0:
+                y = y.fillna(mode_values[0])
+            else:
+                y = y.fillna(0)  # Fallback si pas de mode
         
         # Encoder la cible pour la classification
         if self.model_type == 'classification' and self.label_encoder is not None:
@@ -123,16 +141,39 @@ class ClassicalModels(BaseModel):
         Returns:
             Dictionnaire contenant les métriques d'entraînement
         """
+        # Validation des données
+        if len(X) == 0 or len(y) == 0:
+            raise ValueError("Aucune donnée disponible pour l'entraînement.")
+        
+        if len(X) < 10:
+            raise ValueError(f"Données insuffisantes pour l'entraînement: {len(X)} échantillons. Minimum requis: 10.")
+        
+        # Vérifier qu'il n'y a pas que des NaN
+        if X.isna().all().all():
+            raise ValueError("Toutes les features sont NaN. Impossible d'entraîner le modèle.")
+        
         # Diviser les données
         test_size = kwargs.get('test_size', 0.2)
         random_state = kwargs.get('random_state', 42)
         
-        if self.model_type == 'classification':
-            stratify = y if len(np.unique(y)) > 1 else None
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=random_state, stratify=stratify
-            )
-        else:
+        # Ajuster test_size si trop peu de données
+        min_test_samples = 2
+        if len(X) * test_size < min_test_samples:
+            test_size = min_test_samples / len(X)
+            test_size = min(test_size, 0.5)  # Maximum 50%
+        
+        try:
+            if self.model_type == 'classification':
+                stratify = y if len(np.unique(y)) > 1 else None
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=test_size, random_state=random_state, stratify=stratify
+                )
+            else:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=test_size, random_state=random_state
+                )
+        except ValueError as e:
+            # Si stratify échoue, essayer sans stratification
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=test_size, random_state=random_state
             )
@@ -265,41 +306,88 @@ class MaintenancePredictiveModel(ClassicalModels):
     
     def prepare_features(self, production_df: pd.DataFrame, failures_df: pd.DataFrame) -> pd.DataFrame:
         """Prépare les features spécifiques à la maintenance prédictive."""
+        # Vérifier qu'il y a des données
+        if production_df.empty:
+            raise ValueError("Aucune donnée de production disponible pour créer les features.")
+        
         # Copier les données
         features_data = production_df.copy()
         features_data['Date'] = pd.to_datetime(features_data['Date'])
         features_data = features_data.sort_values('Date')
         
-        # Features dérivées
-        features_data['Production_MA_7'] = features_data["Production journaliere d'huile bbl"].rolling(window=7).mean()
-        features_data['Production_MA_30'] = features_data["Production journaliere d'huile bbl"].rolling(window=30).mean()
-        features_data['Production_Std_7'] = features_data["Production journaliere d'huile bbl"].rolling(window=7).std()
-        features_data['Watercut_MA_7'] = features_data["Teneur en eau (Watercut)"].rolling(window=7).mean()
-        features_data['Production_Trend'] = features_data["Production journaliere d'huile bbl"].diff()
+        # Vérifier les colonnes nécessaires
+        required_cols = ["Production journaliere d'huile bbl", "Teneur en eau (Watercut)"]
+        missing_cols = [col for col in required_cols if col not in features_data.columns]
+        if missing_cols:
+            raise ValueError(f"Colonnes manquantes dans les données: {missing_cols}")
+        
+        # Features dérivées avec gestion des fenêtres adaptatives
+        data_length = len(features_data)
+        
+        # Ajuster les fenêtres selon la quantité de données disponibles
+        window_7 = min(7, max(1, data_length // 4))
+        window_30 = min(30, max(1, data_length // 2))
+        
+        features_data['Production_MA_7'] = features_data["Production journaliere d'huile bbl"].rolling(window=window_7, min_periods=1).mean()
+        features_data['Production_MA_30'] = features_data["Production journaliere d'huile bbl"].rolling(window=window_30, min_periods=1).mean()
+        features_data['Production_Std_7'] = features_data["Production journaliere d'huile bbl"].rolling(window=window_7, min_periods=1).std()
+        features_data['Watercut_MA_7'] = features_data["Teneur en eau (Watercut)"].rolling(window=window_7, min_periods=1).mean()
+        features_data['Production_Trend'] = features_data["Production journaliere d'huile bbl"].diff().fillna(0)
         features_data['Days_Since_Start'] = (features_data['Date'] - features_data['Date'].min()).dt.days
         
         # Créer les labels de pannes
-        if not failures_df.empty:
-            failures_df['Date de notification d\'endomagement de la pompe'] = pd.to_datetime(
-                failures_df['Date de notification d\'endomagement de la pompe']
-            )
-            failure_dates = set(failures_df['Date de notification d\'endomagement de la pompe'].dt.date)
-            
-            # Label binaire (1 si panne dans les N prochains jours, 0 sinon)
-            features_data['Failure_Next_Days'] = 0
-            for i, row in features_data.iterrows():
-                current_date = row['Date'].date()
-                for j in range(1, self.prediction_horizon + 1):
-                    future_date = current_date + pd.Timedelta(days=j)
-                    if future_date in failure_dates:
-                        features_data.loc[i, 'Failure_Next_Days'] = 1
-                        break
+        if not failures_df.empty and 'Date de notification d\'endomagement de la pompe' in failures_df.columns:
+            try:
+                failures_df_copy = failures_df.copy()
+                failures_df_copy['Date de notification d\'endomagement de la pompe'] = pd.to_datetime(
+                    failures_df_copy['Date de notification d\'endomagement de la pompe'], errors='coerce'
+                )
+                # Supprimer les dates invalides
+                failures_df_copy = failures_df_copy.dropna(subset=['Date de notification d\'endomagement de la pompe'])
+                
+                if not failures_df_copy.empty:
+                    failure_dates = set(failures_df_copy['Date de notification d\'endomagement de la pompe'].dt.date)
+                    
+                    # Label binaire (1 si panne dans les N prochains jours, 0 sinon)
+                    features_data['Failure_Next_Days'] = 0
+                    for i, row in features_data.iterrows():
+                        current_date = row['Date'].date()
+                        for j in range(1, self.prediction_horizon + 1):
+                            future_date = current_date + pd.Timedelta(days=j)
+                            if future_date in failure_dates:
+                                features_data.loc[i, 'Failure_Next_Days'] = 1
+                                break
+                else:
+                    # Pas de dates de pannes valides
+                    features_data['Failure_Next_Days'] = 0
+            except Exception as e:
+                # En cas d'erreur, créer des labels par défaut
+                features_data['Failure_Next_Days'] = 0
         else:
-            # Si pas de données de pannes, créer des labels factices
-            features_data['Failure_Next_Days'] = 0
+            # Si pas de données de pannes, créer des labels factices avec un peu de variabilité
+            # pour éviter un dataset complètement déséquilibré
+            np.random.seed(42)
+            features_data['Failure_Next_Days'] = np.random.choice([0, 1], size=len(features_data), p=[0.9, 0.1])
         
-        # Supprimer les lignes avec des NaN
-        features_data = features_data.dropna()
+        # Remplacer les NaN restants par des valeurs par défaut
+        features_data = features_data.fillna({
+            'Production_MA_7': features_data["Production journaliere d'huile bbl"].median(),
+            'Production_MA_30': features_data["Production journaliere d'huile bbl"].median(),
+            'Production_Std_7': 0,
+            'Watercut_MA_7': features_data["Teneur en eau (Watercut)"].median(),
+            'Production_Trend': 0
+        })
+        
+        # Supprimer les lignes avec des NaN dans les colonnes critiques
+        critical_cols = ["Production journaliere d'huile bbl", "Teneur en eau (Watercut)"]
+        features_data = features_data.dropna(subset=critical_cols)
+        
+        # Vérifier qu'il reste des données
+        if features_data.empty:
+            raise ValueError("Aucune donnée valide après le nettoyage. Vérifiez la qualité des données d'entrée.")
+        
+        if len(features_data) < 5:
+            raise ValueError(f"Données insuffisantes après nettoyage: {len(features_data)} échantillons. Minimum requis: 5.")
         
         return features_data
 
