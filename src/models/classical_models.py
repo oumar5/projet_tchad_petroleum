@@ -1,13 +1,21 @@
 import pandas as pd
 import numpy as np
+import logging
 from typing import Dict, Any, Tuple, Optional
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV
 from .base_model import BaseModel
+from .model_utils import (
+    DataValidator, FeatureEngineer, ModelTrainer, PredictionValidator,
+    log_model_info, validate_model_requirements, get_default_hyperparameters
+)
 import warnings
 warnings.filterwarnings('ignore')
+
+# Configuration du logger
+logger = logging.getLogger(__name__)
 
 class ClassicalModels(BaseModel):
     """Implémentation des modèles classiques de machine learning."""
@@ -86,42 +94,71 @@ class ClassicalModels(BaseModel):
         Returns:
             Tuple contenant les features (X) et la cible (y)
         """
-        # Copier le DataFrame
-        data = df.copy()
+        # Validation des données d'entrée
+        DataValidator.validate_input_data(df, target_col)
         
-        # Séparer les features et la cible
+        # Copier et séparer les features et la cible
+        data = df.copy()
         y = data[target_col]
         X = data.drop(columns=[target_col])
         
-        # Sélectionner uniquement les colonnes numériques pour les features
+        # Sélectionner uniquement les colonnes numériques
         numeric_columns = X.select_dtypes(include=[np.number]).columns
         X = X[numeric_columns]
         
-        # Gérer les valeurs manquantes
-        # Pour X, remplacer par la médiane ou 0 si toutes les valeurs sont NaN
-        for col in X.columns:
-            if X[col].isna().all():
-                X[col] = 0
-            else:
-                X[col] = X[col].fillna(X[col].median())
+        # Nettoyer les valeurs NaN
+        X = DataValidator.clean_nan_values(X, strategy='median')
         
-        # Pour y, gérer selon le type de modèle
-        if self.model_type == 'regression':
-            if y.isna().all():
-                raise ValueError("Toutes les valeurs cibles sont NaN. Impossible d'entraîner le modèle.")
-            y = y.fillna(y.median())
+        # Gérer la cible selon le type de modèle
+        if self.model_type == 'classification':
+            # Encoder les labels si nécessaire
+            if y.dtype == 'object' or y.dtype.name == 'category':
+                y = y.astype(str)
+                non_null_mask = y.notna()
+                if non_null_mask.sum() == 0:
+                    raise ValueError("Toutes les valeurs cibles sont NaN.")
+                
+                y_encoded = pd.Series(index=y.index, dtype=int)
+                y_encoded[non_null_mask] = self.label_encoder.fit_transform(y[non_null_mask])
+                y_encoded[~non_null_mask] = -1
+                y = y_encoded
+                
+                # Supprimer les lignes avec des NaN dans y
+                valid_mask = y != -1
+                X = X[valid_mask]
+                y = y[valid_mask]
+            else:
+                valid_mask = y.notna()
+                X = X[valid_mask]
+                y = y[valid_mask]
         else:
+            # Régression
             if y.isna().all():
-                raise ValueError("Toutes les valeurs cibles sont NaN. Impossible d'entraîner le modèle.")
-            mode_values = y.mode()
-            if len(mode_values) > 0:
-                y = y.fillna(mode_values[0])
-            else:
-                y = y.fillna(0)  # Fallback si pas de mode
+                raise ValueError("Toutes les valeurs cibles sont NaN.")
+            y = y.fillna(y.median())
         
-        # Encoder la cible pour la classification
-        if self.model_type == 'classification' and self.label_encoder is not None:
-            y = pd.Series(self.label_encoder.fit_transform(y), index=y.index)
+        # Supprimer les lignes avec trop de NaN (plus de 40%)
+        initial_length = len(X)
+        X = X.dropna(thresh=len(X.columns) * 0.6)
+        y = y.loc[X.index]
+        
+        # Vérifications finales
+        if len(X) < 10:
+            raise ValueError("Données insuffisantes après nettoyage.")
+        
+        # Conversion en types numériques
+        X = DataValidator.convert_to_numeric(X)
+        if self.model_type == 'regression':
+            y = DataValidator.convert_to_numeric(pd.DataFrame({'target': y}))['target']
+        
+        # Reset des index
+        X = X.reset_index(drop=True)
+        y = y.reset_index(drop=True)
+        
+        # Log du nettoyage
+        removed_rows = initial_length - len(X)
+        if removed_rows > 0:
+            logger.warning(f"{removed_rows} lignes supprimées à cause de valeurs NaN persistantes.")
         
         # Sauvegarder les noms des features
         self.feature_names = X.columns.tolist()
@@ -155,35 +192,62 @@ class ClassicalModels(BaseModel):
         # Diviser les données
         test_size = kwargs.get('test_size', 0.2)
         random_state = kwargs.get('random_state', 42)
+        stratify = self.model_type == 'classification'
         
-        # Ajuster test_size si trop peu de données
-        min_test_samples = 2
-        if len(X) * test_size < min_test_samples:
-            test_size = min_test_samples / len(X)
-            test_size = min(test_size, 0.5)  # Maximum 50%
+        X_train, X_test, y_train, y_test = ModelTrainer.prepare_train_test_split(
+            X, y, test_size, random_state, stratify
+        )
         
-        try:
-            if self.model_type == 'classification':
-                stratify = y if len(np.unique(y)) > 1 else None
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=test_size, random_state=random_state, stratify=stratify
-                )
-            else:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=test_size, random_state=random_state
-                )
-        except ValueError as e:
-            # Si stratify échoue, essayer sans stratification
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=random_state
-            )
+        # Préparation pour la normalisation
+        # Gérer les colonnes avec variance nulle
+        zero_var_cols = X_train.columns[X_train.var() == 0]
+        if len(zero_var_cols) > 0:
+            # Ajouter un petit bruit pour éviter la variance nulle
+            for col in zero_var_cols:
+                X_train[col] = X_train[col] + np.random.normal(0, 1e-8, len(X_train))
+                X_test[col] = X_test[col] + np.random.normal(0, 1e-8, len(X_test))
+        
+        # Gérer les valeurs infinies
+        X_train = X_train.replace([np.inf, -np.inf], np.nan)
+        X_test = X_test.replace([np.inf, -np.inf], np.nan)
+        
+        # Remplir les NaN avec la médiane
+        X_train = X_train.fillna(X_train.median()).fillna(0)
+        X_test = X_test.fillna(X_train.median()).fillna(0)  # Utiliser la médiane du train
         
         # Normaliser les features
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_test_scaled = self.scaler.transform(X_test)
+        try:
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
+        except Exception as e:
+            raise ValueError(f"Erreur lors de la normalisation: {e}")
+        
+        # Vérifier s'il reste des NaN après normalisation
+        if np.isnan(X_train_scaled).any():
+            # Remplacer les NaN par 0
+            X_train_scaled = np.nan_to_num(X_train_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+            X_test_scaled = np.nan_to_num(X_test_scaled, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Créer et entraîner le modèle
         self.model = self._get_model(**kwargs)
+        
+        # Validation finale avant entraînement
+        # Vérifier si y_train est un scalaire ou contient des NaN
+        if hasattr(y_train, 'values'):
+            y_values = y_train.values
+        else:
+            y_values = y_train
+            
+        if np.isscalar(y_values) or (hasattr(y_values, 'size') and y_values.size == 1):
+            raise ValueError(f"y_train est un scalaire: {y_values}")
+            
+        if np.any(np.isnan(y_values)):
+            nan_indices = np.where(np.isnan(y_values))[0]
+            raise ValueError(f"y_train contient des NaN aux indices: {nan_indices[:10]}")
+        
+        # Vérification finale des données normalisées
+        if np.any(np.isnan(X_train_scaled)) or np.any(np.isinf(X_train_scaled)):
+            raise ValueError("X_train_scaled contient des NaN ou des valeurs infinies")
         
         # Optimisation des hyperparamètres si demandée
         if kwargs.get('optimize_hyperparameters', False):
@@ -255,7 +319,7 @@ class ClassicalModels(BaseModel):
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
-        Fait des prédictions.
+        Fait des prédictions sur de nouvelles données.
         
         Args:
             X: Features pour la prédiction
@@ -266,17 +330,30 @@ class ClassicalModels(BaseModel):
         if not self.is_trained:
             raise ValueError("Le modèle doit être entraîné avant de faire des prédictions.")
         
-        # Normaliser les features
-        X_scaled = self.scaler.transform(X)
+        # Validation et nettoyage des données d'entrée
+        X_validated = PredictionValidator.validate_prediction_input(
+            X, getattr(self, 'feature_names', None)
+        )
+        X_clean = PredictionValidator.clean_prediction_data(X_validated)
         
-        # Prédictions
-        predictions = self.model.predict(X_scaled)
-        
-        # Décoder les prédictions pour la classification
-        if self.model_type == 'classification' and self.label_encoder is not None:
-            predictions = self.label_encoder.inverse_transform(predictions)
-        
-        return predictions
+        try:
+            # Normaliser les features
+            X_scaled = self.scaler.transform(X_clean)
+            
+            # Prédictions
+            predictions = self.model.predict(X_scaled)
+            
+            # Décoder les prédictions pour la classification
+            if self.model_type == 'classification' and self.label_encoder is not None and hasattr(self.label_encoder, 'classes_'):
+                predictions = self.label_encoder.inverse_transform(predictions)
+            
+            return predictions
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la prédiction: {e}")
+            logger.error(f"Shape de X_clean: {X_clean.shape}")
+            logger.error(f"Colonnes de X_clean: {X_clean.columns.tolist()}")
+            raise ValueError(f"Erreur lors de la prédiction: {e}")
     
     def predict_proba(self, X: pd.DataFrame) -> Optional[np.ndarray]:
         """
@@ -403,28 +480,33 @@ class ProductionForecastModel(ClassicalModels):
         data['Date'] = pd.to_datetime(data['Date'])
         data = data.sort_values('Date')
         
-        # Features temporelles
-        data['Year'] = data['Date'].dt.year
-        data['Month'] = data['Date'].dt.month
-        data['Day'] = data['Date'].dt.day
-        data['DayOfWeek'] = data['Date'].dt.dayofweek
-        data['DayOfYear'] = data['Date'].dt.dayofyear
+        # Vérifier qu'il y a assez de données
+        if len(data) < 60:
+            raise ValueError(f"Données insuffisantes pour créer des features temporelles: {len(data)} points (minimum 60)")
         
-        # Features de lag
-        for lag in [1, 7, 14, 30]:
-            data[f'{target_col}_lag_{lag}'] = data[target_col].shift(lag)
+        # Créer les features temporelles
+        data = FeatureEngineer.create_temporal_features(data, 'Date')
         
-        # Moyennes mobiles
-        for window in [7, 14, 30]:
-            data[f'{target_col}_MA_{window}'] = data[target_col].rolling(window=window).mean()
-            data[f'{target_col}_Std_{window}'] = data[target_col].rolling(window=window).std()
+        # Créer les features de lag
+        data = FeatureEngineer.create_lag_features(data, target_col, [1, 7, 14])
         
-        # Tendances
-        data[f'{target_col}_Trend_7'] = data[target_col].diff(7)
-        data[f'{target_col}_Trend_30'] = data[target_col].diff(30)
+        # Créer les features de moyennes mobiles
+        data = FeatureEngineer.create_rolling_features(data, target_col, [7, 14])
         
-        # Supprimer les NaN
-        data = data.dropna()
+        # Créer les features de tendance
+        data = FeatureEngineer.create_trend_features(data, target_col)
+        
+        # Nettoyage final
+        initial_length = len(data)
+        data = data.dropna(thresh=len(data.columns) * 0.6)
+        
+        if len(data) < 10:
+            raise ValueError(f"Données insuffisantes après nettoyage: {len(data)} points (minimum 10)")
+        
+        # Log du nettoyage
+        removed_rows = initial_length - len(data)
+        if removed_rows > 0:
+            logger.warning(f"{removed_rows} lignes supprimées à cause de trop de valeurs NaN.")
         
         return data
 

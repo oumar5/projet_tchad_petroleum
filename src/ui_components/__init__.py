@@ -7,6 +7,7 @@ from .model_comparison_ui import ModelComparisonUI
 from .dashboard_ui import DashboardUI
 from .home_ui import HomeUI
 from .sidebar_ui import SidebarUI
+from .training_progress import TrainingProgress, get_training_progress
 
 __all__ = [
     'MaintenanceUI',

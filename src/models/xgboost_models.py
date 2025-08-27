@@ -2,8 +2,12 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Tuple, Optional
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.model_selection import GridSearchCV, cross_val_score
 from .base_model import BaseModel
+from .model_utils import (
+    DataValidator, FeatureEngineer, ModelTrainer, PredictionValidator,
+    log_model_info, validate_model_requirements, get_default_hyperparameters
+)
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -75,10 +79,11 @@ class XGBoostModels(BaseModel):
         Returns:
             Tuple contenant les features (X) et la cible (y)
         """
-        # Copier le DataFrame
-        data = df.copy()
+        # Validation des données d'entrée
+        DataValidator.validate_input_data(df, target_col)
         
-        # Séparer les features et la cible
+        # Copier et séparer les features et la cible
+        data = df.copy()
         y = data[target_col]
         X = data.drop(columns=[target_col])
         
@@ -87,9 +92,8 @@ class XGBoostModels(BaseModel):
         X = X[numeric_columns]
         
         # Gérer les valeurs manquantes (XGBoost peut gérer les NaN nativement)
-        # Mais on peut choisir de les remplir
         if kwargs.get('fill_missing', True):
-            X = X.fillna(X.median())
+            X = DataValidator.clean_nan_values(X, strategy='median')
             if self.model_type == 'regression':
                 y = y.fillna(y.median())
             else:
@@ -117,19 +121,14 @@ class XGBoostModels(BaseModel):
         Returns:
             Dictionnaire contenant les métriques d'entraînement
         """
-        # Diviser les données
+        # Diviser les données avec les utilitaires communs
         test_size = kwargs.get('test_size', 0.2)
         random_state = kwargs.get('random_state', 42)
+        stratify = self.model_type == 'classification'
         
-        if self.model_type == 'classification':
-            stratify = y if len(np.unique(y)) > 1 else None
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=random_state, stratify=stratify
-            )
-        else:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=random_state
-            )
+        X_train, X_test, y_train, y_test = ModelTrainer.prepare_train_test_split(
+            X, y, test_size, random_state, stratify
+        )
         
         # Normalisation optionnelle (XGBoost n'en a pas forcément besoin)
         if kwargs.get('scale_features', False):
@@ -141,42 +140,40 @@ class XGBoostModels(BaseModel):
         # Créer le modèle
         self.model = self._get_model(**kwargs)
         
-        # Configuration de l'early stopping
-        early_stopping_rounds = kwargs.get('early_stopping_rounds', 10)
-        eval_set = [(X_train, y_train), (X_test, y_test)]
-        
         # Optimisation des hyperparamètres si demandée
         if kwargs.get('optimize_hyperparameters', False):
             self.model = self._optimize_hyperparameters(X_train, y_train, **kwargs)
         else:
-            # Entraînement avec early stopping
-            self.model.fit(
-                X_train, y_train,
-                eval_set=eval_set,
-                early_stopping_rounds=early_stopping_rounds,
-                verbose=kwargs.get('verbose', False)
-            )
+            # Entraînement simple sans early stopping pour éviter les erreurs de compatibilité
+            try:
+                # Essayer avec early stopping si supporté
+                early_stopping_rounds = kwargs.get('early_stopping_rounds', 10)
+                eval_set = [(X_train, y_train), (X_test, y_test)]
+                
+                self.model.fit(
+                    X_train, y_train,
+                    eval_set=eval_set,
+                    early_stopping_rounds=early_stopping_rounds,
+                    verbose=kwargs.get('verbose', False)
+                )
+            except TypeError:
+                # Fallback : entraînement simple sans early stopping
+                self.model.fit(X_train, y_train)
         
         # Prédictions
         y_pred_train = self.model.predict(X_train)
         y_pred_test = self.model.predict(X_test)
         
-        # Évaluation
-        if self.model_type == 'classification':
-            y_prob_train = self.model.predict_proba(X_train) if hasattr(self.model, 'predict_proba') else None
-            y_prob_test = self.model.predict_proba(X_test) if hasattr(self.model, 'predict_proba') else None
-            
-            self.training_metrics = self.evaluate_classification(
-                y_train, y_pred_train, 
-                y_prob_train[:, 1] if y_prob_train is not None and y_prob_train.shape[1] > 1 else None
-            )
-            self.validation_metrics = self.evaluate_classification(
-                y_test, y_pred_test,
-                y_prob_test[:, 1] if y_prob_test is not None and y_prob_test.shape[1] > 1 else None
-            )
-        else:
-            self.training_metrics = self.evaluate_regression(y_train, y_pred_train)
-            self.validation_metrics = self.evaluate_regression(y_test, y_pred_test)
+        # Évaluation avec les utilitaires communs
+        self.training_metrics = ModelTrainer.calculate_metrics(y_train, y_pred_train, self.model_type)
+        self.validation_metrics = ModelTrainer.calculate_metrics(y_test, y_pred_test, self.model_type)
+        
+        # Probabilités pour la classification
+        y_prob_train = None
+        y_prob_test = None
+        if self.model_type == 'classification' and hasattr(self.model, 'predict_proba'):
+            y_prob_train = self.model.predict_proba(X_train)
+            y_prob_test = self.model.predict_proba(X_test)
         
         # Importance des features
         self.feature_importance_df = pd.DataFrame({
@@ -234,16 +231,24 @@ class XGBoostModels(BaseModel):
         if not self.is_trained:
             raise ValueError("Le modèle doit être entraîné avant de faire des prédictions.")
         
+        # Validation et nettoyage des données d'entrée
+        X_validated = PredictionValidator.validate_prediction_input(
+            X, getattr(self, 'feature_names', None)
+        )
+        X_clean = PredictionValidator.clean_prediction_data(X_validated)
+        
         # Normaliser si nécessaire
         if hasattr(self.scaler, 'mean_'):
-            X_scaled = self.scaler.transform(X)
-            X = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)
+            X_scaled = self.scaler.transform(X_clean)
+            X_clean = pd.DataFrame(X_scaled, columns=X_clean.columns, index=X_clean.index)
         
         # Prédictions
-        predictions = self.model.predict(X)
+        predictions = self.model.predict(X_clean)
         
         # Décoder les prédictions pour la classification
-        if self.model_type == 'classification' and self.label_encoder is not None:
+        if (self.model_type == 'classification' and 
+            self.label_encoder is not None and 
+            hasattr(self.label_encoder, 'classes_')):
             predictions = self.label_encoder.inverse_transform(predictions)
         
         return predictions

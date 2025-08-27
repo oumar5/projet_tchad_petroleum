@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Tuple, Optional
 from .base_model import BaseModel
+from .model_utils import (
+    DataValidator, FeatureEngineer, ModelTrainer, PredictionValidator,
+    log_model_info, validate_model_requirements, get_default_hyperparameters
+)
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -53,6 +57,9 @@ class ProphetModels(BaseModel):
         Returns:
             Tuple contenant les données formatées pour Prophet (ds, y)
         """
+        # Validation des données d'entrée
+        DataValidator.validate_input_data(df, target_col, min_samples=10)
+        
         # Copier et nettoyer les données
         data = df.copy()
         data[date_col] = pd.to_datetime(data[date_col])
@@ -64,8 +71,8 @@ class ProphetModels(BaseModel):
             'y': data[target_col]
         })
         
-        # Gérer les valeurs manquantes
-        prophet_data = prophet_data.dropna()
+        # Nettoyer les valeurs manquantes
+        prophet_data = DataValidator.clean_nan_values(prophet_data, strategy='median')
         
         # Ajouter des régresseurs externes si spécifiés
         external_regressors = kwargs.get('external_regressors', [])
@@ -113,17 +120,31 @@ class ProphetModels(BaseModel):
         elif self.algorithm == 'neuralprophet':
             self.model = self._create_neuralprophet_model(**kwargs)
             
-            # Entraîner le modèle
-            metrics = self.model.fit(train_data, freq='D')
+            # Entraîner le modèle (NeuralProphet n'utilise pas freq dans fit)
+            try:
+                metrics = self.model.fit(train_data)
+            except Exception as e:
+                raise ValueError(f"Erreur lors de l'entraînement NeuralProphet: {e}")
         
         # Faire des prédictions sur les données de test
         test_periods = len(test_data)
-        future = self.model.make_future_dataframe(periods=test_periods, freq='D')
+        
+        try:
+            if self.algorithm == 'prophet':
+                future = self.model.make_future_dataframe(periods=test_periods, freq='D')
+            else:  # neuralprophet
+                future = self.model.make_future_dataframe(periods=test_periods)
+        except Exception as e:
+            # Fallback : créer le future dataframe manuellement
+            last_date = train_data['ds'].max()
+            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=test_periods, freq='D')
+            all_dates = pd.concat([train_data['ds'], pd.Series(future_dates)])
+            future = pd.DataFrame({'ds': all_dates})
         
         # Ajouter les régresseurs externes pour les prédictions
         external_regressors = kwargs.get('external_regressors', [])
         for regressor in external_regressors:
-            if regressor in X.columns:
+            if regressor in X.columns and len(X[regressor]) >= len(future):
                 future[regressor] = X[regressor].values[:len(future)]
         
         # Prédictions
@@ -178,30 +199,30 @@ class ProphetModels(BaseModel):
     
     def _create_neuralprophet_model(self, **kwargs):
         """Crée un modèle NeuralProphet avec les paramètres spécifiés."""
-        return NeuralProphet(
-            growth=kwargs.get('growth', 'linear'),
-            changepoints=kwargs.get('changepoints', None),
-            n_changepoints=kwargs.get('n_changepoints', 10),
-            changepoints_range=kwargs.get('changepoints_range', 0.8),
-            trend_reg=kwargs.get('trend_reg', 0),
-            trend_reg_threshold=kwargs.get('trend_reg_threshold', False),
-            yearly_seasonality=kwargs.get('yearly_seasonality', 'auto'),
-            weekly_seasonality=kwargs.get('weekly_seasonality', 'auto'),
-            daily_seasonality=kwargs.get('daily_seasonality', 'auto'),
-            seasonality_mode=kwargs.get('seasonality_mode', 'additive'),
-            seasonality_reg=kwargs.get('seasonality_reg', 0),
-            n_forecasts=kwargs.get('n_forecasts', 1),
-            n_lags=kwargs.get('n_lags', 0),
-            num_hidden_layers=kwargs.get('num_hidden_layers', 0),
-            d_hidden=kwargs.get('d_hidden', None),
-            ar_sparsity=kwargs.get('ar_sparsity', None),
-            learning_rate=kwargs.get('learning_rate', None),
-            epochs=kwargs.get('epochs', None),
-            batch_size=kwargs.get('batch_size', None),
-            loss_func=kwargs.get('loss_func', 'Huber'),
-            normalize=kwargs.get('normalize', 'auto'),
-            impute_missing=kwargs.get('impute_missing', True)
-        )
+        # Paramètres compatibles avec NeuralProphet v0.5+
+        model_params = {
+            'growth': kwargs.get('growth', 'linear'),
+            'n_changepoints': kwargs.get('n_changepoints', 10),
+            'changepoints_range': kwargs.get('changepoints_range', 0.8),
+            'trend_reg': kwargs.get('trend_reg', 0),
+            'yearly_seasonality': kwargs.get('yearly_seasonality', 'auto'),
+            'weekly_seasonality': kwargs.get('weekly_seasonality', 'auto'),
+            'daily_seasonality': kwargs.get('daily_seasonality', 'auto'),
+            'seasonality_mode': kwargs.get('seasonality_mode', 'additive'),
+            'seasonality_reg': kwargs.get('seasonality_reg', 0),
+            'n_forecasts': kwargs.get('n_forecasts', 1),
+            'n_lags': kwargs.get('n_lags', 0),
+            'normalize': kwargs.get('normalize', 'auto'),
+            'impute_missing': kwargs.get('impute_missing', True)
+        }
+        
+        # Ajouter les paramètres optionnels seulement s'ils sont fournis
+        optional_params = ['learning_rate', 'epochs', 'batch_size']
+        for param in optional_params:
+            if kwargs.get(param) is not None:
+                model_params[param] = kwargs[param]
+        
+        return NeuralProphet(**model_params)
     
     def predict(self, periods: int = 30, **kwargs) -> np.ndarray:
         """
@@ -217,8 +238,21 @@ class ProphetModels(BaseModel):
         if not self.is_trained:
             raise ValueError("Le modèle doit être entraîné avant de faire des prédictions.")
         
+        # Valider le paramètre periods
+        if periods is None:
+            periods = 30
+        if not isinstance(periods, int) or periods <= 0:
+            raise ValueError(f"periods doit être un entier positif, reçu: {periods}")
+        
         # Créer le dataframe futur
-        future = self.model.make_future_dataframe(periods=periods, freq='D')
+        try:
+            if self.algorithm == 'prophet':
+                future = self.model.make_future_dataframe(periods=periods, freq='D')
+            else:  # neuralprophet
+                # NeuralProphet n'utilise pas le paramètre freq
+                future = self.model.make_future_dataframe(periods=periods)
+        except Exception as e:
+            raise ValueError(f"Erreur lors de la création du dataframe futur: {e}")
         
         # Ajouter les régresseurs externes si nécessaire
         external_regressors = kwargs.get('external_regressors', {})

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
 from datetime import timedelta
 from src.models.model_factory import ModelFactory
 from src.models.model_evaluator import ModelEvaluator
@@ -89,13 +90,33 @@ class ForecastUI:
     
     @staticmethod
     def _train_models(selected_algorithms: list, config: dict, production_df: pd.DataFrame):
-        """Entraîne les modèles sélectionnés."""
+        """Entraîne les modèles sélectionnés avec affichage de progression."""
         evaluator = ModelEvaluator()
         
         # Préparer les données
         validation_years = st.session_state.get('validation_years', 2)
         train_data, val_data = split_data_for_validation(production_df, validation_years)
         
+        # Valider les données
+        if train_data.empty:
+            st.error("❌ Aucune donnée d'entraînement disponible.")
+            return
+        
+        # Vérifier la colonne cible
+        target_col = config['target_column']
+        if target_col not in train_data.columns:
+            st.error(f"❌ Colonne cible '{target_col}' non trouvée dans les données.")
+            return
+        
+        # Nettoyer les données et valider
+        original_length = len(train_data)
+        train_data = train_data.dropna(subset=[target_col, 'Date'])
+        
+        if len(train_data) < 30:
+            st.error(f"❌ Données insuffisantes après nettoyage: {len(train_data)} points (minimum 30 requis). {original_length - len(train_data)} lignes supprimées à cause de valeurs manquantes.")
+            return
+        
+        # Affichage simple
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -107,29 +128,109 @@ class ForecastUI:
             progress_bar.progress((i + 1) / len(selected_algorithms))
             
             try:
+                # Création du modèle
                 model = ModelFactory.create_model('production_forecast', algorithm)
                 
+                # Préparation des données
+                st.info(f"📊 Préparation des données pour {algorithm}")
+                
                 if algorithm in ['prophet', 'neuralprophet']:
-                    # Modèles Prophet
+                    # Modèles Prophet - validation spéciale
+                    if len(train_data) < 10:
+                        raise ValueError(f"Données insuffisantes pour {algorithm}: {len(train_data)} points (minimum 10)")
+                    
                     X, y = model.prepare_data(train_data, config['target_column'], 'Date')
-                    train_results = model.train(X, y, test_size=config['test_size'])
+                    
+                    if X.empty or len(X) < 5:
+                        raise ValueError(f"Données préparées insuffisantes pour {algorithm}")
+                    
+                    # Configuration spécifique pour Prophet
+                    train_kwargs = {
+                        'test_size': config['test_size'],
+                        'forecast_horizon': config.get('forecast_horizon', 30)
+                    }
+                    
+                    # Étape 3: Entraînement
+                    train_results = model.train(X, y, **train_kwargs)
+                    
                 else:
-                    # Modèles classiques/XGBoost
+                    # Modèles classiques/XGBoost - validation améliorée
                     prepared_data = ForecastUI._prepare_features(model, train_data, config['target_column'])
+                    
+                    if prepared_data.empty:
+                        raise ValueError(f"Aucune donnée après préparation pour {algorithm}")
+                    
                     X, y = model.prepare_data(prepared_data, config['target_column'])
+                    
+                    # Validation spéciale pour les données NaN
+                    if len(X) < 10:
+                        raise ValueError(f"Données insuffisantes après préparation: {len(X)} échantillons")
+                    
+                    # Validation des données préparées
+                    nan_in_prepared = prepared_data.isnull().sum().sum()
+                    if nan_in_prepared > 0:
+                        st.info(f"ℹ️ Nettoyage de {nan_in_prepared} valeurs manquantes pour {algorithm}")
+                        nan_cols = prepared_data.columns[prepared_data.isnull().any()].tolist()
+                        st.write(f"Colonnes concernées: {', '.join(nan_cols)}")
+                    
+                    # Nettoyage final des données
+                    nan_count_x = X.isnull().sum().sum()
+                    nan_count_y = y.isnull().sum()
+                    
+                    if nan_count_x > 0 or nan_count_y > 0:
+                        st.info(f"🧹 Nettoyage final: {nan_count_x + nan_count_y} valeurs manquantes")
+                        X = X.fillna(X.median()).fillna(0)
+                        y = y.fillna(y.median())
+                    
+                    # Validation finale
+                    if X.shape[0] == 0 or len(y) == 0:
+                        raise ValueError(f"Données vides après nettoyage pour {algorithm}")
+                    
+                    # Gestion des valeurs infinies
+                    inf_count_x = np.isinf(X.select_dtypes(include=[np.number])).sum().sum()
+                    inf_count_y = np.isinf(y).sum() if np.issubdtype(y.dtype, np.number) else 0
+                    if inf_count_x > 0 or inf_count_y > 0:
+                        st.info(f"🔧 Correction de {inf_count_x + inf_count_y} valeurs infinies")
+                        X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+                        if np.issubdtype(y.dtype, np.number):
+                            y = y.replace([np.inf, -np.inf], np.nan).fillna(y.median())
+                    
+                    # Confirmation des données propres
+                    st.success(f"✅ Données validées: {X.shape[0]} échantillons, {X.shape[1]} features")
+                    
+                    # Entraînement
+                    st.info(f"🚀 Entraînement de {algorithm} en cours...")
                     train_results = model.train(X, y, test_size=config['test_size'])
                 
                 # Évaluation
-                if algorithm in ['prophet', 'neuralprophet']:
-                    test_data = train_results['test_data']
-                    y_test = test_data['y']
-                    y_pred = train_results['y_pred_test']
-                else:
-                    X_test = train_results['X_test']
-                    y_test = train_results['y_test']
-                    y_pred = train_results['y_pred']
+                st.info(f"📈 Évaluation des performances de {algorithm}")
                 
-                metrics = evaluator.evaluate_model(model, None, y_test, algorithm)
+                # Évaluation avec validation
+                if algorithm in ['prophet', 'neuralprophet']:
+                    if 'test_data' in train_results and 'y_pred_test' in train_results:
+                        test_data = train_results['test_data']
+                        y_test = test_data['y']
+                        y_pred = train_results['y_pred_test']
+                    else:
+                        raise ValueError(f"Résultats d'entraînement incomplets pour {algorithm}")
+                else:
+                    if all(key in train_results for key in ['X_test', 'y_test', 'y_pred']):
+                        X_test = train_results['X_test']
+                        y_test = train_results['y_test']
+                        y_pred = train_results['y_pred']
+                    else:
+                        raise ValueError(f"Résultats d'entraînement incomplets pour {algorithm}")
+                
+                # Validation des prédictions
+                if y_pred is None or len(y_pred) == 0:
+                    raise ValueError(f"Prédictions vides pour {algorithm}")
+                
+                # Récupérer X_test depuis les résultats d'entraînement
+                X_test = train_results.get('X_test', None)
+                if X_test is None:
+                    raise ValueError(f"X_test non disponible dans les résultats d'entraînement pour {algorithm}")
+                
+                metrics = evaluator.evaluate_model(model, X_test, y_test, algorithm)
                 
                 results[algorithm] = {
                     'model': model,
@@ -138,14 +239,25 @@ class ForecastUI:
                 }
                 trained_models[algorithm] = model
                 
-                st.success(f"✅ {algorithm} entraîné avec succès !")
+                st.success(f"✅ {algorithm} entraîné avec succès!")
                 
             except Exception as e:
-                st.error(f"❌ Erreur lors de l'entraînement de {algorithm}: {str(e)}")
+                error_msg = str(e)
+                st.error(f"❌ Erreur lors de l'entraînement de {algorithm}: {error_msg}")
+                import logging
+                logging.error(f"Erreur entraînement {algorithm}: {error_msg}", exc_info=True)
         
+        # Finaliser la progression
         progress_bar.progress(1.0)
         status_text.text("Entraînement terminé !")
         
+        # Afficher le résumé
+        if results:
+            st.success(f"✅ {len(results)} modèle(s) entraîné(s) avec succès sur {len(selected_algorithms)} total")
+        else:
+            st.error("❌ Aucun modèle n'a pu être entraîné")
+        
+        # Sauvegarder les résultats
         st.session_state['forecast_results'] = results
         st.session_state['forecast_evaluator'] = evaluator
         st.session_state['forecast_models'] = trained_models

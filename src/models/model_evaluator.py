@@ -4,9 +4,9 @@ from typing import Dict, Any, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import (
-    confusion_matrix, classification_report, roc_curve, auc, precision_recall_curve,
-    mean_squared_error, mean_absolute_error, r2_score
+    confusion_matrix, classification_report, roc_curve, auc, precision_recall_curve
 )
+from .model_utils import ModelTrainer
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -70,15 +70,8 @@ class ModelEvaluator:
     def _evaluate_classification(self, y_true: pd.Series, y_pred: np.ndarray, 
                                y_prob: Optional[np.ndarray], model_name: str) -> Dict[str, Any]:
         """Évalue un modèle de classification."""
-        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-        
-        # Métriques de base
-        metrics = {
-            'accuracy': accuracy_score(y_true, y_pred),
-            'precision': precision_score(y_true, y_pred, average='weighted', zero_division=0),
-            'recall': recall_score(y_true, y_pred, average='weighted', zero_division=0),
-            'f1_score': f1_score(y_true, y_pred, average='weighted', zero_division=0)
-        }
+        # Métriques de base utilisant les utilitaires communs
+        metrics = ModelTrainer.calculate_metrics(y_true, y_pred, model_type='classification')
         
         # Matrice de confusion
         cm = confusion_matrix(y_true, y_pred)
@@ -117,12 +110,8 @@ class ModelEvaluator:
     
     def _evaluate_regression(self, y_true: pd.Series, y_pred: np.ndarray, model_name: str) -> Dict[str, Any]:
         """Évalue un modèle de régression."""
-        metrics = {
-            'mse': mean_squared_error(y_true, y_pred),
-            'rmse': np.sqrt(mean_squared_error(y_true, y_pred)),
-            'mae': mean_absolute_error(y_true, y_pred),
-            'r2': r2_score(y_true, y_pred)
-        }
+        # Métriques de base utilisant les utilitaires communs
+        metrics = ModelTrainer.calculate_metrics(y_true, y_pred, model_type='regression')
         
         # MAPE (Mean Absolute Percentage Error)
         try:
