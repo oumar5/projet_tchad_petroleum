@@ -406,8 +406,8 @@ class ForecastUI:
         production_df = load_production_data()
         
         if best_model_name in ['prophet', 'neuralprophet']:
-            # Prévisions Prophet
-            predictions = model.predict(periods=forecast_horizon)
+            # Prévisions Prophet - utiliser le paramètre positionnel
+            predictions = model.predict(forecast_horizon)
             
             # Créer les dates futures
             last_date = production_df['Date'].max()
