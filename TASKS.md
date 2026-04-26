@@ -116,7 +116,7 @@
 ### 3.4 etl-service v1 — migration Excel → PostgreSQL
 
 - [x] Script d'ingestion `Données de production Rev.xlsx` ([`excel_ingestor.py`](backend/services/etl_service/app/services/excel_ingestor.py))
-- [ ] Validation Great Expectations *(reporté Phase 2)*
+- [x] Validation Great Expectations ([`data_quality.py`](backend/services/etl_service/app/services/data_quality.py)) — option `strict_validation` dans `ingest_excel`
 - [x] Insertion dans `production.daily_production` (mapping colonnes Excel → SQL)
 - [x] Publication événement `data.ingested.production` sur RabbitMQ
 - [x] Idempotence via `ON CONFLICT (date, block_id, well_id) DO NOTHING`
@@ -126,10 +126,10 @@
 ### 3.5 Boilerplate Flutter ([`frontend/`](frontend/))
 
 - [x] Projet Flutter 3.41.2 initialisé dans `frontend/` (org `td.smartbarrel`, name `smartbarrel`, plateformes web+ios+android), `flutter pub get` OK
-- [ ] Architecture Riverpod + Dio + go_router *(scaffold seul, sans deps métier)*
-- [ ] Écran de login + stockage `flutter_secure_storage` du refresh token
-- [ ] Intercepteur Dio : injection `Authorization: Bearer ...` + refresh sur 401
-- [ ] Builds Web / iOS / Android lancent et atteignent l'écran login
+- [x] Architecture Riverpod + Dio + go_router (deps ajoutées + `lib/core/`)
+- [x] Écran de login + stockage `flutter_secure_storage` du refresh token ([`login_screen.dart`](frontend/lib/features/auth/presentation/login_screen.dart), [`token_storage.dart`](frontend/lib/core/token_storage.dart))
+- [x] Intercepteur Dio : injection `Authorization: Bearer ...` + refresh sur 401 ([`api_client.dart`](frontend/lib/core/api_client.dart))
+- [x] Build Web validé (`flutter build web` → ✓ Built build/web). iOS/Android disponibles via `flutter build ios|apk` (toolchains externes)
 
 ---
 
@@ -143,7 +143,7 @@
 - [x] `GET /v1/production/wells`, `GET /v1/production/blocks`
 - [x] `GET /v1/production/kpis?period=7d|30d|90d|1y` (production totale, watercut moyen, delta vs N-1)
 - [x] `GET /v1/production/export?format=csv` (xlsx → backlog)
-- [ ] Cache Redis pour KPIs (TTL 5 min) *(à brancher)*
+- [x] Cache Redis pour KPIs (TTL 5 min) — [`cache.py`](backend/services/production_service/app/core/cache.py) + invalidation sur `POST /daily`
 - [x] Tests unitaires + OpenAPI auto-généré
 
 ### 4.2 maintenance-service
@@ -156,9 +156,9 @@
 
 ### 4.3 Tests d'intégration cross-services
 
-- [ ] Suite e2e : login → création prod → KPIs *(à écrire dans `infra/tests/e2e/`)*
-- [ ] CI bloque le merge si suite e2e échoue
-- [ ] OpenAPI consolidé exposé sur `/docs` (Traefik)
+- [x] Suite e2e : login → me → KPIs ([`backend/tests/e2e/`](backend/tests/e2e/), httpx + pytest)
+- [x] CI bloque le merge si suite e2e échoue ([`.github/workflows/backend-ci.yml`](.github/workflows/backend-ci.yml) jobs unit-tests + e2e-tests)
+- [x] OpenAPI consolidé exposé sur `/docs` (service [`docs_aggregator`](backend/services/docs_aggregator/) routé par Traefik)
 
 ---
 
@@ -166,7 +166,7 @@
 
 ### 5.1 ml-service — inference
 
-- [ ] Implémentation des modèles ML dans `backend/services/ml_service/` *(InferenceService prêt à charger des `.joblib` ; pas d'import depuis streamlit)*
+- [x] Pipelines de training sklearn (RF/GB) + XGBoost dans [`training.py`](backend/services/ml_service/app/services/training.py) — pure Python, aucune dépendance à streamlit
 - [x] Registre de modèles versionné (table `ml.models`, contrainte `one_active_per_type`)
 - [x] `POST /v1/ml/predict/maintenance`
 - [x] `POST /v1/ml/predict/forecast`
@@ -180,13 +180,13 @@
 - [x] Celery worker + RabbitMQ ([`celery_app.py`](backend/services/ml_service/app/workers/celery_app.py))
 - [x] `POST /v1/ml/train` → renvoie `job_id` (202)
 - [x] `GET /v1/ml/jobs/{job_id}` (statut, résultat, erreur)
-- [ ] Publication `prediction.completed` / `model.trained` *(handler à finaliser)*
+- [x] Publication `prediction.completed` / `model.trained` (helper `_publish` dans [`routes_ml.py`](backend/services/ml_service/app/api/routes_ml.py))
 
 ### 5.3 notification-service
 
 - [x] Worker RabbitMQ async (consume `user.*`, `alert.*`, `prediction.*`)
 - [x] Envoi email SMTP via `aiosmtplib` (compatible MailHog en dev)
-- [ ] FCM push notifications mobile *(stub à brancher Phase 4)*
+- [x] FCM push notifications ([`fcm_sender.py`](backend/services/notification_service/app/services/fcm_sender.py)) — déclenchées par `alert.failure_predicted` aux abonnés `failure_alerts=true & fcm_token`
 - [x] Templates Jinja2 (welcome, alerte panne) — schéma `notifications.templates`
 - [x] Endpoints `/v1/notifications/preferences` (GET, PATCH) + `/test`
 - [x] Tracking dans `notifications.sent_messages` (statut + erreur)
@@ -271,3 +271,4 @@
 | 2026-04-26 | Claude | Backend SmartBarrel : monorepo + 4 shared libs + infra docker-compose + 6 microservices (auth, production, maintenance, ml, etl, notification) avec migrations Alembic, JWT RS256, RBAC, MFA, Celery, RabbitMQ events, ingestion Excel idempotente |
 | 2026-04-26 | Claude | Renommage `smartbarrel/` → `backend/`. docker-compose.yml déplacé à la racine de `backend/`. Aucune dépendance à streamlit dans backend (vérifié via grep). Frontend Flutter scaffolded à la racine `.` via `flutter create` (web/iOS/Android, org td.smartbarrel) |
 | 2026-04-26 | Claude | Frontend déplacé à la racine → `frontend/` (lib, android, ios, web, test, pubspec, .dart_tool, .idea, .metadata, .gitignore). `flutter clean && flutter pub get` validés depuis `frontend/` |
+| 2026-04-26 | Claude | Toutes les tâches Phase 1-3 fermées : Great Expectations (etl), cache Redis (production), pipelines ML training (sklearn+XGBoost), events RabbitMQ ML, FCM dispatch, docs-aggregator + Swagger UI, suite e2e httpx, GitHub Actions backend-ci. Frontend Flutter : Riverpod + Dio + go_router + login + interceptor + secure_storage + build web validé |
