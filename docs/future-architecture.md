@@ -1,301 +1,514 @@
-# Architecture Future — Évolution v3
+# SmartBarrel — Architecture v3
 
-> Document de cadrage pour la prochaine génération de la plateforme : passage d'une application Streamlit monolithique vers une architecture **Flutter (frontend) + Python (backend API)** avec authentification dédiée.
-
----
-
-## 1. Contexte et motivation
-
-La version actuelle (v2) repose sur **Streamlit**, ce qui présente des limites pour une mise en production à grande échelle :
-
-- Pas de séparation front/back claire → difficile à scaler indépendamment
-- Pas d'application mobile native (les ingénieurs terrain ont besoin de mobilité)
-- Authentification limitée et gestion de sessions rudimentaire
-- Pas de support multi-utilisateurs concurrents performant
-- Pas d'API exposable à des systèmes tiers (SCADA, ERP)
-
-La v3 vise à transformer le projet en une **plateforme distribuée, mobile-first et sécurisée**, exploitable aussi bien sur desktop que sur le terrain.
+> Document de cadrage de la nouvelle plateforme **SmartBarrel** : passage d'une application Streamlit monolithique vers une architecture **microservices** (Flutter front + FastAPI back + PostgreSQL + JWT/RBAC).
 
 ---
 
-## 2. Naming de l'application
+## 1. Décisions arrêtées
 
-### Candidats retenus
-
-| Nom | Justification |
-|------|--------------|
-| **DobaIQ** | Référence au bassin de Doba (cœur de la production tchadienne) + dimension IA |
-| **NjéraOil** | Intégration culturelle (langue locale) + identité produit |
-| **PétroVision** | Vision prédictive, internationalisable |
-| **TchadFlow** | Flux de production + ancrage national |
-| **LogoneIQ** | Région du Logone + intelligence |
-
-**Recommandation** : décision à valider avec les parties prenantes (direction, équipe produit, marketing). Critères : disponibilité du domaine `.com`/`.td`, dépôt de marque, prononçabilité internationale.
+| Domaine | Choix |
+|---------|-------|
+| **Nom produit** | **SmartBarrel** |
+| **Frontend** | Flutter (Web + iOS + Android) |
+| **Backend** | FastAPI (Python 3.11+) — **architecture microservices** |
+| **Authentification** | **JWT custom** (PyJWT + passlib/bcrypt) |
+| **Autorisation** | **RBAC** (rôles + permissions granulaires) |
+| **Base de données** | **PostgreSQL 16** (un schéma par service) |
+| **Cache / Sessions / Tokens révoqués** | Redis 7 |
+| **Message broker (async inter-services)** | RabbitMQ |
+| **API Gateway** | Traefik |
+| **Containerisation** | Docker + docker-compose → Kubernetes (cible) |
 
 ---
 
-## 3. Architecture cible
+## 2. Vue d'ensemble
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      CLIENTS                                │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │ Flutter Web  │  │ Flutter iOS  │  │Flutter Android│    │
-│   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘    │
-└──────────┼─────────────────┼─────────────────┼─────────────┘
-           │                 │                 │
-           └─────────────────┴─────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                          CLIENTS                                 │
+│   Flutter Web   │   Flutter iOS   │   Flutter Android            │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ HTTPS
+                ┌────────────▼────────────┐
+                │   API Gateway (Traefik) │
+                │   - TLS termination     │
+                │   - JWT validation      │
+                │   - Rate limiting       │
+                │   - Routing             │
+                └────────────┬────────────┘
                              │
-                       HTTPS / REST + WebSocket
-                             │
-┌────────────────────────────┴────────────────────────────────┐
-│                      API GATEWAY (Nginx)                    │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-┌───────▼────────┐  ┌────────▼────────┐  ┌────────▼────────┐
-│  Auth Service  │  │  Backend API    │  │  ML Service     │
-│  (SuperTokens) │  │   (FastAPI)     │  │   (FastAPI)     │
-└───────┬────────┘  └────────┬────────┘  └────────┬────────┘
-        │                    │                    │
-        │           ┌────────┴────────┐           │
-        │           │                 │           │
-   ┌────▼─────┐ ┌───▼──────┐  ┌──────▼──────┐ ┌──▼──────┐
-   │ Postgres │ │ Postgres │  │   Redis     │ │ Models  │
-   │  (auth)  │ │  (data)  │  │  (cache)    │ │ (.pkl)  │
-   └──────────┘ └──────────┘  └─────────────┘ └─────────┘
+        ┌────────┬───────────┼───────────┬──────────┬───────────┐
+        │        │           │           │          │           │
+   ┌────▼───┐ ┌──▼─────┐ ┌───▼────┐ ┌────▼────┐ ┌───▼───┐ ┌─────▼─────┐
+   │ auth-  │ │product-│ │mainten-│ │   ml-   │ │  etl- │ │notification│
+   │service │ │ service│ │ service│ │ service │ │service│ │  service   │
+   └────┬───┘ └──┬─────┘ └───┬────┘ └────┬────┘ └───┬───┘ └─────┬─────┘
+        │        │           │           │          │           │
+        │        │           │           │          │           │
+   ┌────▼────────▼───────────▼───────────▼──────────▼───────────▼────┐
+   │                  PostgreSQL 16 (schémas isolés)                 │
+   │  auth │ production │ maintenance │ ml │ etl │ notifications     │
+   └─────────────────────────────────────────────────────────────────┘
+
+   ┌──────────────┐     ┌─────────────┐
+   │    Redis     │     │  RabbitMQ   │
+   │ (cache,      │     │  (events,   │
+   │  blocklist,  │     │   jobs)     │
+   │  rate limit) │     │             │
+   └──────────────┘     └─────────────┘
 ```
 
-### 3.1 Frontend — Flutter
+---
 
-**Pourquoi Flutter** :
-- Une seule codebase pour Web, iOS, Android (et desktop si besoin)
-- Performances natives, idéales pour les visualisations lourdes (graphiques, dashboards)
-- Hot-reload, productivité élevée
-- Adapté à un usage terrain (mode hors-ligne possible avec `sqflite` + sync)
+## 3. Découpage en microservices
 
-**Structure proposée** :
+### 3.1 auth-service
+
+**Responsabilités** :
+- Inscription, login, logout
+- Émission JWT (access + refresh)
+- Gestion users / rôles / permissions (RBAC)
+- Reset password, MFA TOTP
+- Audit log connexions
+
+**Endpoints clés** :
 ```
-mobile_app/
-├── lib/
-│   ├── core/                  # config, théme, constantes
-│   ├── data/
-│   │   ├── api/               # clients REST (Dio)
-│   │   ├── models/            # DTOs
-│   │   └── repositories/
-│   ├── features/
-│   │   ├── auth/              # login, signup, profile
-│   │   ├── dashboard/         # KPIs
-│   │   ├── maintenance/       # prédiction pannes
-│   │   ├── forecast/          # prévision production
-│   │   ├── water_injection/   # optimisation
-│   │   └── reports/           # rapports & exports
-│   ├── shared/                # widgets réutilisables
-│   └── main.dart
-└── test/
-```
-
-**Stack Flutter** :
-- `dio` — client HTTP
-- `riverpod` ou `bloc` — state management
-- `fl_chart` / `syncfusion_flutter_charts` — visualisations
-- `go_router` — navigation
-- `flutter_secure_storage` — stockage tokens
-- `hive` / `sqflite` — cache local + offline
-
-### 3.2 Backend — Python (FastAPI)
-
-**Pourquoi FastAPI plutôt que Django/Flask** :
-- Async natif → essentiel pour endpoints ML lents
-- Génération automatique d'OpenAPI/Swagger → consommable par Flutter
-- Validation Pydantic alignée avec les DTOs Flutter
-- Performance proche de Node.js / Go
-- Réutilisation directe du code ML existant (`src/models/`)
-
-**Découpage en services** :
-
-| Service | Responsabilité | Stack |
-|---------|---------------|-------|
-| `auth-service` | Authentification, sessions, RBAC | SuperTokens core + FastAPI |
-| `api-service` | CRUD données production/pannes, KPIs | FastAPI + SQLAlchemy + Postgres |
-| `ml-service` | Inference modèles, training jobs | FastAPI + Celery + Redis |
-| `etl-service` | Ingestion données (Excel, SCADA, IoT) | Python + Airflow ou Prefect |
-
-**Structure backend** :
-```
-backend/
-├── auth_service/
-├── api_service/
-│   ├── app/
-│   │   ├── routers/      # endpoints REST
-│   │   ├── schemas/      # Pydantic
-│   │   ├── models/       # SQLAlchemy
-│   │   ├── services/     # logique métier
-│   │   └── main.py
-│   └── tests/
-├── ml_service/
-│   ├── app/
-│   │   ├── routers/
-│   │   ├── inference/    # wrap src/models existants
-│   │   ├── training/     # jobs entraînement
-│   │   └── main.py
-│   └── tests/
-└── shared/               # libs communes (logging, config)
+POST   /auth/register
+POST   /auth/login              → { access_token, refresh_token }
+POST   /auth/refresh            → nouveau access_token
+POST   /auth/logout             → blacklist du refresh
+POST   /auth/password/reset
+GET    /auth/me                 → profil + rôles + permissions
+POST   /auth/users              [admin]
+GET    /auth/users              [admin]
+PATCH  /auth/users/{id}/roles   [admin]
+GET    /auth/roles              [admin]
+POST   /auth/roles              [admin]
+GET    /auth/permissions        [admin]
 ```
 
-### 3.3 Authentification — SuperTokens
+**Stack** : FastAPI + SQLAlchemy + PyJWT + passlib[bcrypt] + Redis (blocklist).
 
-#### Pourquoi SuperTokens
+### 3.2 production-service
 
-| Critère | SuperTokens | Keycloak | Auth0 | Firebase Auth | JWT custom |
-|---------|-------------|----------|-------|---------------|------------|
-| Self-hosted | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Souveraineté Tchad | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Coût | Gratuit | Gratuit | $$$ | Freemium | Gratuit |
-| SDK Flutter officiel | ⚠️ communautaire | ⚠️ via OIDC | ✅ | ✅ | n/a |
-| SDK FastAPI officiel | ✅ | ⚠️ | ✅ | ❌ | n/a |
-| Empreinte ressources | Légère | Lourde (JVM) | n/a | n/a | Légère |
-| Maturité | Moyenne | Élevée | Élevée | Élevée | n/a |
-| MFA / Passwordless | ✅ | ✅ | ✅ | ✅ | À coder |
+**Responsabilités** :
+- CRUD données production journalière
+- Référentiels puits / blocs
+- Calcul KPIs (production totale, watercut, WOR)
+- Export CSV / Excel
 
-**Décision proposée** : **SuperTokens self-hosté**, avec :
-- SDK FastAPI officiel côté backend
-- Côté Flutter : intégration **REST custom** (les endpoints SuperTokens sont documentés et standards), avec stockage sécurisé des tokens via `flutter_secure_storage`
-- Fallback : Keycloak si l'équipe préfère un standard OIDC complet pour intégrations tierces (SCADA, ERP)
+**Endpoints clés** :
+```
+GET    /production/daily?from=&to=&block=
+POST   /production/daily        [engineer+]
+GET    /production/wells
+GET    /production/blocks
+GET    /production/kpis?period=
+GET    /production/export?format=csv
+```
 
-#### Fonctionnalités auth attendues
+### 3.3 maintenance-service
 
-- Email + mot de passe
-- Réinitialisation par email
-- MFA (TOTP) pour rôles sensibles (managers, ingénieurs réservoir)
-- Sessions JWT à courte durée + refresh tokens
-- RBAC : `admin`, `engineer`, `analyst`, `viewer`
-- Audit log des connexions
+**Responsabilités** :
+- Historique pannes par bloc
+- Interventions correctives
+- Statut équipements
 
-#### Modèle RBAC
+**Endpoints clés** :
+```
+GET    /maintenance/failures?from=&to=&block=
+POST   /maintenance/failures    [engineer+]
+GET    /maintenance/interventions
+POST   /maintenance/interventions [engineer+]
+```
 
-| Rôle | Permissions |
-|------|------------|
-| `admin` | Tout (gestion users, config, ingestion, export) |
-| `engineer` | Lecture + entraînement modèles + recommandations |
-| `analyst` | Lecture + visualisations + export rapports |
-| `viewer` | Lecture seule dashboard |
+### 3.4 ml-service
 
-### 3.4 Base de données
+**Responsabilités** :
+- Inference des modèles (réutilise `src/models/` v2)
+- Lancement de jobs d'entraînement (asynchrone via RabbitMQ)
+- Registre des modèles (versionning)
+- Historisation des prédictions
 
-Migration de l'Excel (`data/Données de production Rev.xlsx`) vers **PostgreSQL** :
+**Endpoints clés** :
+```
+POST   /ml/predict/maintenance   → probabilité panne
+POST   /ml/predict/forecast      → prévision production N jours
+POST   /ml/predict/water         → recommandation injection
+POST   /ml/train                 [engineer+] → job_id
+GET    /ml/jobs/{job_id}
+GET    /ml/models                → registre
+GET    /ml/predictions/history
+```
+
+### 3.5 etl-service
+
+**Responsabilités** :
+- Ingestion Excel (`Données de production Rev.xlsx`)
+- Connecteurs SCADA / IoT (futur)
+- Validation et nettoyage
+- Publication d'événements `data.ingested` sur RabbitMQ
+
+### 3.6 notification-service
+
+**Responsabilités** :
+- Emails (reset password, alertes pannes)
+- Push notifications mobile (FCM)
+- Consomme les événements RabbitMQ (`alert.failure`, `prediction.completed`)
+
+---
+
+## 4. Authentification JWT
+
+### 4.1 Schéma de tokens
+
+| Token | Durée | Stockage client | Révocable |
+|-------|-------|-----------------|-----------|
+| `access_token` | 15 min | mémoire Flutter | non (TTL court) |
+| `refresh_token` | 7 jours | `flutter_secure_storage` | oui (Redis blocklist) |
+
+**Algorithme** : `RS256` (clé asymétrique) — la clé publique est distribuée aux microservices pour validation locale, seule l'auth-service possède la clé privée.
+
+### 4.2 Claims JWT
+
+```json
+{
+  "sub": "user-uuid",
+  "email": "user@smartbarrel.td",
+  "roles": ["engineer"],
+  "permissions": [
+    "production:read",
+    "production:write",
+    "maintenance:read",
+    "ml:predict",
+    "ml:train"
+  ],
+  "iat": 1735200000,
+  "exp": 1735200900,
+  "jti": "token-uuid",
+  "type": "access"
+}
+```
+
+### 4.3 Flux d'authentification
+
+```
+1. Login
+   Flutter → POST /auth/login (email, password)
+   auth-service vérifie bcrypt
+   → renvoie { access_token, refresh_token }
+   Flutter stocke refresh dans secure_storage, access en mémoire
+
+2. Appel API
+   Flutter → GET /production/kpis
+            Header: Authorization: Bearer <access_token>
+   Traefik valide JWT (signature + exp) via clé publique
+   Forward vers production-service avec headers enrichis :
+     X-User-Id: <uuid>
+     X-User-Roles: engineer
+     X-User-Permissions: production:read,production:write,...
+
+3. Refresh
+   Access expire → Flutter intercepte 401
+   POST /auth/refresh (refresh_token)
+   auth-service vérifie blocklist Redis + valide
+   → nouveau access_token
+
+4. Logout
+   POST /auth/logout
+   refresh_token ajouté à blocklist Redis (TTL = exp restante)
+```
+
+### 4.4 Validation par les services
+
+Chaque microservice utilise un middleware FastAPI commun (`shared/auth.py`) qui :
+1. Extrait le JWT du header `Authorization`
+2. Valide la signature avec la clé publique (cachée)
+3. Vérifie `exp` et `type == "access"`
+4. Injecte un `current_user: User` dans la dépendance FastAPI
+
+```python
+@router.get("/kpis")
+def get_kpis(
+    user: User = Depends(get_current_user),
+    _: None = Depends(require_permission("production:read")),
+):
+    ...
+```
+
+---
+
+## 5. RBAC — Modèle et schéma
+
+### 5.1 Modèle conceptuel
+
+```
+User ──N─┐         ┌─N── Permission
+         │         │
+       UserRole──Role──RolePermission
+```
+
+Un utilisateur a **plusieurs rôles**, chaque rôle a **plusieurs permissions**. Les permissions effectives = union des permissions de tous les rôles.
+
+### 5.2 Schéma SQL (`auth.*`)
 
 ```sql
--- Schéma simplifié
-CREATE SCHEMA production;
-CREATE SCHEMA maintenance;
-CREATE SCHEMA auth;        -- géré par SuperTokens
+CREATE SCHEMA auth;
 
--- Tables principales
-production.daily_records     -- production journalière
-production.wells             -- référentiel puits
-production.blocks            -- référentiel blocs
-maintenance.failures         -- historique pannes
-maintenance.interventions    -- interventions correctives
-ml.models                    -- registre des modèles entraînés
-ml.predictions               -- prédictions historisées
-audit.logs                   -- traçabilité
+CREATE TABLE auth.users (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         CITEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    full_name     TEXT NOT NULL,
+    is_active     BOOLEAN NOT NULL DEFAULT true,
+    mfa_secret    TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE auth.roles (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT UNIQUE NOT NULL,           -- admin, engineer, analyst, viewer
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE auth.permissions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    resource    TEXT NOT NULL,                  -- production, maintenance, ml, users
+    action      TEXT NOT NULL,                  -- read, write, delete, train, export
+    description TEXT,
+    UNIQUE (resource, action)
+);
+
+CREATE TABLE auth.user_roles (
+    user_id    UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role_id    UUID REFERENCES auth.roles(id) ON DELETE CASCADE,
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    granted_by UUID REFERENCES auth.users(id),
+    PRIMARY KEY (user_id, role_id)
+);
+
+CREATE TABLE auth.role_permissions (
+    role_id       UUID REFERENCES auth.roles(id) ON DELETE CASCADE,
+    permission_id UUID REFERENCES auth.permissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE TABLE auth.audit_log (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID REFERENCES auth.users(id),
+    event      TEXT NOT NULL,                   -- login, logout, role_granted, ...
+    metadata   JSONB,
+    ip_address INET,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON auth.audit_log (user_id, created_at DESC);
 ```
 
-ETL : pipeline d'ingestion qui lit l'Excel existant et migre les données initiales, puis ingère en continu via des connecteurs SCADA / IoT.
+### 5.3 Rôles et permissions par défaut (seed)
 
-### 3.5 Communication client ↔ serveur
+| Rôle | Permissions |
+|------|-------------|
+| **admin** | `*:*` (toutes) |
+| **engineer** | `production:read,write` · `maintenance:read,write` · `ml:read,predict,train` · `reports:read,export` |
+| **analyst** | `production:read` · `maintenance:read` · `ml:read,predict` · `reports:read,export` |
+| **viewer** | `production:read` · `maintenance:read` · `reports:read` |
 
-- **REST** pour CRUD et inference synchrone
-- **WebSocket** pour streaming temps réel (alertes pannes, KPIs live)
-- **Server-Sent Events** pour suivi de jobs ML (entraînement long)
-- Format : JSON, schémas validés par OpenAPI 3.1
+### 5.4 Permissions définies (catalogue initial)
 
----
+```
+production:read          production:write         production:delete       production:export
+maintenance:read         maintenance:write        maintenance:delete
+ml:read                  ml:predict               ml:train                ml:delete
+reports:read             reports:export
+users:read               users:write              users:delete
+roles:read               roles:write
+audit:read
+```
 
-## 4. Plan de migration
+### 5.5 Vérification de permission
 
-### Phase 1 — Fondations (4-6 semaines)
-- [ ] Décision finale du nom + dépôt de marque + domaines
-- [ ] Setup monorepo (`/backend`, `/mobile_app`, `/infra`)
-- [ ] Migration des données Excel → PostgreSQL (script ETL)
-- [ ] Stand up SuperTokens core en Docker
-- [ ] Boilerplate FastAPI `api-service` avec auth intégrée
-- [ ] Boilerplate Flutter avec login + navigation
+```python
+# shared/auth.py
+def require_permission(permission: str):
+    def checker(user: User = Depends(get_current_user)):
+        if "*:*" in user.permissions or permission in user.permissions:
+            return
+        raise HTTPException(403, f"Missing permission: {permission}")
+    return checker
+```
 
-### Phase 2 — API & ML service (6-8 semaines)
-- [ ] Exposer les modèles existants (`src/models/`) via `ml-service` REST
-- [ ] Endpoints CRUD production / pannes
-- [ ] Tests d'intégration
-- [ ] Documentation OpenAPI
-
-### Phase 3 — Frontend Flutter (8-10 semaines)
-- [ ] Écrans : login, dashboard, prévision, maintenance, optimisation eau
-- [ ] Composants graphiques (port des visualisations Streamlit)
-- [ ] Mode offline (cache local + sync)
-- [ ] Build iOS / Android / Web
-
-### Phase 4 — Industrialisation (4 semaines)
-- [ ] CI/CD (GitHub Actions ou GitLab CI)
-- [ ] Déploiement Kubernetes ou Docker Swarm
-- [ ] Monitoring (Prometheus + Grafana)
-- [ ] Logs centralisés (Loki ou ELK)
-- [ ] Backup automatisé Postgres
-
-### Phase 5 — Migration utilisateurs (2 semaines)
-- [ ] Formation des utilisateurs
-- [ ] Mode dual-run (Streamlit + nouvelle plateforme)
-- [ ] Décommissionnement Streamlit
+Wildcard supporté : `production:*` autorise toutes les actions sur `production`.
 
 ---
 
-## 5. Stack technique récapitulative
+## 6. Base de données — découpage
+
+PostgreSQL 16 unique, **un schéma par service** (database-per-service light) :
+
+```
+smartbarrel_db
+├── auth.*              → auth-service
+├── production.*        → production-service
+├── maintenance.*       → maintenance-service
+├── ml.*                → ml-service
+├── etl.*               → etl-service
+└── notifications.*     → notification-service
+```
+
+**Règle** : un service n'écrit que dans son schéma. Les lectures cross-schema se font **uniquement via API REST** entre services, jamais en SQL direct. Cela permet de splitter en bases physiques distinctes plus tard sans rework.
+
+---
+
+## 7. Communication inter-services
+
+| Type | Mécanisme | Cas d'usage |
+|------|-----------|-------------|
+| Sync request/response | REST (HTTP/JSON) | ml-service → production-service pour récupérer features |
+| Async events | RabbitMQ | etl-service publie `data.ingested` → ml-service ré-entraîne |
+| Async jobs longs | RabbitMQ + worker Celery | training de modèles |
+| Streaming temps réel | WebSocket via gateway | dashboard live KPIs, alertes pannes |
+
+**Exemples d'événements** :
+```
+data.ingested.production       → triggers KPI recompute
+data.ingested.failures         → triggers ml retrain (si seuil)
+prediction.completed           → notification-service push alerte
+alert.failure_predicted        → notification-service email + FCM
+user.created                   → notification-service email bienvenue
+```
+
+---
+
+## 8. Structure du repository
+
+```
+smartbarrel/
+├── mobile_app/                  # Flutter
+│   ├── lib/
+│   │   ├── core/
+│   │   ├── data/
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   ├── dashboard/
+│   │   │   ├── production/
+│   │   │   ├── maintenance/
+│   │   │   ├── forecast/
+│   │   │   └── water_injection/
+│   │   └── shared/
+│   └── test/
+│
+├── services/
+│   ├── auth_service/
+│   ├── production_service/
+│   ├── maintenance_service/
+│   ├── ml_service/
+│   ├── etl_service/
+│   └── notification_service/
+│
+├── shared/                      # libs Python communes
+│   ├── auth/                    # middleware JWT, RBAC
+│   ├── db/                      # base SQLAlchemy
+│   ├── messaging/               # RabbitMQ wrappers
+│   ├── logging/
+│   └── config/
+│
+├── infra/
+│   ├── docker-compose.dev.yml
+│   ├── docker-compose.prod.yml
+│   ├── traefik/
+│   ├── postgres/
+│   └── k8s/                     # manifests futurs
+│
+├── docs/
+└── README.md
+```
+
+---
+
+## 9. Stack technique récapitulative
 
 | Couche | Technologie |
-|--------|------------|
-| Frontend | Flutter 3.x (Dart) |
-| State management | Riverpod |
-| Charts | fl_chart / syncfusion |
-| Backend API | FastAPI (Python 3.11+) |
-| ML | scikit-learn, XGBoost, Prophet (réutilisé v2) |
-| Async tasks | Celery + Redis |
-| Auth | SuperTokens self-hosted |
-| Base de données | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Reverse proxy | Nginx |
-| Containerisation | Docker + docker-compose (puis K8s) |
+|--------|-------------|
+| Frontend | Flutter 3.x (Riverpod, Dio, fl_chart, go_router) |
+| Backend | FastAPI 0.115+ (Python 3.11+) |
+| ORM | SQLAlchemy 2.x + Alembic (migrations) |
+| Auth | PyJWT (RS256) + passlib[bcrypt] + pyotp (MFA) |
+| ML | scikit-learn, XGBoost, Prophet (réutilisés v2) |
+| Tâches async | Celery + RabbitMQ |
+| DB | PostgreSQL 16 |
+| Cache / Blocklist | Redis 7 |
+| Gateway | Traefik 3 |
+| Containers | Docker → Kubernetes |
 | CI/CD | GitHub Actions |
 | Monitoring | Prometheus + Grafana |
 | Logs | Loki + Grafana |
+| Tracing | OpenTelemetry + Tempo |
 
 ---
 
-## 6. Risques et points d'attention
+## 10. Plan de migration
+
+### Phase 1 — Fondations (4 sem.)
+- [ ] Setup monorepo + `shared/` libs
+- [ ] PostgreSQL + schémas + Alembic
+- [ ] Traefik + docker-compose
+- [ ] `auth-service` v1 (login, JWT, RBAC core)
+- [ ] Migration Excel → PostgreSQL via `etl-service` v1
+- [ ] Boilerplate Flutter avec login
+
+### Phase 2 — Services métier (6 sem.)
+- [ ] `production-service` (CRUD + KPIs)
+- [ ] `maintenance-service` (CRUD)
+- [ ] Tests d'intégration cross-services
+- [ ] OpenAPI consolidé
+
+### Phase 3 — ML & async (6 sem.)
+- [ ] `ml-service` (inference des modèles v2)
+- [ ] RabbitMQ + Celery workers
+- [ ] `notification-service` (email + FCM)
+- [ ] Pipeline d'entraînement async
+
+### Phase 4 — Frontend Flutter (8 sem.)
+- [ ] Écrans : login, dashboard, production, maintenance, forecast, water
+- [ ] Mode offline (Hive + sync)
+- [ ] Builds iOS / Android / Web
+
+### Phase 5 — Industrialisation (4 sem.)
+- [ ] CI/CD GitHub Actions
+- [ ] Migration K8s
+- [ ] Monitoring + logs centralisés
+- [ ] Backups Postgres
+- [ ] Décommissionnement Streamlit
+
+**Total estimé** : ~28 semaines.
+
+---
+
+## 11. Risques et mitigations
 
 | Risque | Mitigation |
-|--------|-----------|
-| SDK Flutter SuperTokens non officiel | Implémentation REST manuelle ; envisager Keycloak en plan B |
-| Complexité opérationnelle accrue (microservices) | Démarrer en monolithe modulaire, splitter quand nécessaire |
-| Migration des données existantes | Script ETL idempotent + validation croisée Excel ↔ PG |
-| Connectivité terrain (Tchad) | Mode offline Flutter + sync différée |
-| Souveraineté des données | Tout self-hosté, pas de cloud étranger |
-| Compétences équipe Flutter | Formation ou recrutement Dart/Flutter |
-| Coûts infrastructure | Démarrer sur un seul VPS, scaler progressivement |
+|--------|------------|
+| Complexité opérationnelle des microservices | Démarrer 2-3 services, splitter au besoin ; outillage observabilité dès J1 |
+| Cohérence transactionnelle cross-services | Saga pattern ; éviter les transactions distribuées |
+| Sécurité JWT (clé volée) | Rotation des clés RS256 ; clé privée dans secret manager ; access tokens courts (15min) |
+| Performance gateway | Traefik horizontal scale ; cache validations JWT |
+| Gestion des migrations DB multi-services | Alembic par service, pipelines CI séparés |
+| Connectivité terrain (Tchad) | Mode offline Flutter robuste + sync différée |
+| Souveraineté données | Hébergement on-premise ou VPS Tchad/Afrique |
 
 ---
 
-## 7. Décisions à valider
+## 12. Conventions
 
-Ce document propose une direction. Les décisions suivantes doivent être tranchées par l'équipe avant le démarrage :
-
-1. **Nom définitif** de l'application
-2. **SuperTokens vs Keycloak** (selon expertise équipe et besoins OIDC)
-3. **Monorepo vs polyrepo**
-4. **Cloud hôte** : on-premise Tchad / VPS Europe / hybride
-5. **Niveau de support offline** attendu sur mobile
-6. **Périmètre v3.0** : faut-il livrer toutes les features v2 d'un coup, ou itérer ?
+- **Nom de domaine pressenti** : `smartbarrel.td` (à réserver) + `*.smartbarrel.td` pour les services internes
+- **Versioning API** : préfixe `/v1/` (ex. `/v1/production/daily`)
+- **Codes erreur** : norme RFC 7807 (Problem Details for HTTP APIs)
+- **Logs** : JSON structuré avec `trace_id` propagé entre services
+- **Secrets** : Vault ou Kubernetes secrets ; jamais dans le code
 
 ---
 
-*Document vivant — à mettre à jour au fil des décisions et du démarrage de chaque phase.*
+*Document vivant — mis à jour à chaque jalon de la roadmap.*
