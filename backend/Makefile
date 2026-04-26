@@ -20,15 +20,17 @@ jwt-keys:
 	chmod 600 infra/jwt/private.pem
 	@echo "JWT keys generated in infra/jwt/"
 
+COMPOSE := docker compose -f smartbarrel.compose.yml
+
 dev-up: jwt-keys
 	@if [ ! -f .env ]; then cp .env.example .env; fi
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 dev-down:
-	docker compose down
+	$(COMPOSE) down
 
 dev-logs:
-	docker compose logs -f --tail=100
+	$(COMPOSE) logs -f --tail=100
 
 migrate:
 	@for svc in $(SERVICES); do \

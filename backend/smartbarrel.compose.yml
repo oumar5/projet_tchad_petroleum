@@ -1,7 +1,9 @@
+name: smartbarrel
+
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: sb-postgres
+    container_name: smartbarrel-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -17,11 +19,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   redis:
     image: redis:7-alpine
-    container_name: sb-redis
+    container_name: smartbarrel-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -30,11 +32,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
-    container_name: sb-rabbitmq
+    container_name: smartbarrel-rabbitmq
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
@@ -47,19 +49,19 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   mailhog:
     image: mailhog/mailhog:latest
-    container_name: sb-mailhog
+    container_name: smartbarrel-mailhog
     ports:
       - "1025:1025"
       - "8025:8025"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   traefik:
     image: traefik:v3.1
-    container_name: sb-traefik
+    container_name: smartbarrel-traefik
     restart: unless-stopped
     command:
       - "--api.insecure=true"
@@ -71,7 +73,7 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   auth-service:
     build:
@@ -89,7 +91,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.auth.rule=Host(`api.localhost`) && PathPrefix(`/v1/auth`)"
       - "traefik.http.services.auth.loadbalancer.server.port=8000"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   production-service:
     build:
@@ -106,7 +108,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.prod.rule=Host(`api.localhost`) && PathPrefix(`/v1/production`)"
       - "traefik.http.services.prod.loadbalancer.server.port=8000"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   maintenance-service:
     build:
@@ -123,7 +125,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.maint.rule=Host(`api.localhost`) && PathPrefix(`/v1/maintenance`)"
       - "traefik.http.services.maint.loadbalancer.server.port=8000"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   ml-service:
     build:
@@ -142,7 +144,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.ml.rule=Host(`api.localhost`) && PathPrefix(`/v1/ml`)"
       - "traefik.http.services.ml.loadbalancer.server.port=8000"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   etl-service:
     build:
@@ -161,7 +163,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.etl.rule=Host(`api.localhost`) && PathPrefix(`/v1/etl`)"
       - "traefik.http.services.etl.loadbalancer.server.port=8000"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
   notification-service:
     build:
@@ -179,12 +181,12 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.notif.rule=Host(`api.localhost`) && PathPrefix(`/v1/notifications`)"
       - "traefik.http.services.notif.loadbalancer.server.port=8000"
-    networks: [sb-net]
+    networks: [smartbarrel-net]
 
 volumes:
   postgres_data:
   ml_models:
 
 networks:
-  sb-net:
+  smartbarrel-net:
     driver: bridge

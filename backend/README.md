@@ -5,10 +5,11 @@ Cf. [`../docs/future-architecture.md`](../docs/future-architecture.md) pour la v
 
 ## Structure
 
-```
+```text
 backend/
-├── docker-compose.yml          # Stack dev complète
+├── smartbarrel.compose.yml     # Stack dev complète (project name: smartbarrel)
 ├── .env.example
+├── .env                        # créé depuis .env.example (git-ignoré)
 ├── Makefile
 ├── services/
 │   ├── auth_service/           # JWT + RBAC + MFA
