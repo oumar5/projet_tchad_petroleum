@@ -1,0 +1,190 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [sb-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: sb-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [sb-net]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: sb-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks: [sb-net]
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: sb-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks: [sb-net]
+
+  traefik:
+    image: traefik:v3.1
+    container_name: sb-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [sb-net]
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: services/auth_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./jwt:/etc/jwt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=Host(`api.localhost`) && PathPrefix(`/v1/auth`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=8000"
+    networks: [sb-net]
+
+  production-service:
+    build:
+      context: ..
+      dockerfile: services/production_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./jwt:/etc/jwt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prod.rule=Host(`api.localhost`) && PathPrefix(`/v1/production`)"
+      - "traefik.http.services.prod.loadbalancer.server.port=8000"
+    networks: [sb-net]
+
+  maintenance-service:
+    build:
+      context: ..
+      dockerfile: services/maintenance_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./jwt:/etc/jwt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.maint.rule=Host(`api.localhost`) && PathPrefix(`/v1/maintenance`)"
+      - "traefik.http.services.maint.loadbalancer.server.port=8000"
+    networks: [sb-net]
+
+  ml-service:
+    build:
+      context: ..
+      dockerfile: services/ml_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./jwt:/etc/jwt:ro
+      - ml_models:/app/models
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ml.rule=Host(`api.localhost`) && PathPrefix(`/v1/ml`)"
+      - "traefik.http.services.ml.loadbalancer.server.port=8000"
+    networks: [sb-net]
+
+  etl-service:
+    build:
+      context: ..
+      dockerfile: services/etl_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./jwt:/etc/jwt:ro
+      - ../../data:/app/data:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.etl.rule=Host(`api.localhost`) && PathPrefix(`/v1/etl`)"
+      - "traefik.http.services.etl.loadbalancer.server.port=8000"
+    networks: [sb-net]
+
+  notification-service:
+    build:
+      context: ..
+      dockerfile: services/notification_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      - ./jwt:/etc/jwt:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.notif.rule=Host(`api.localhost`) && PathPrefix(`/v1/notifications`)"
+      - "traefik.http.services.notif.loadbalancer.server.port=8000"
+    networks: [sb-net]
+
+volumes:
+  postgres_data:
+  ml_models:
+
+networks:
+  sb-net:
+    driver: bridge
