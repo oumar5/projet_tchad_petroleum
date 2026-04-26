@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/api_client.dart';
 import '../../../core/offline/offline_cache.dart';
 
@@ -59,16 +61,12 @@ class ProductionRepository {
     return r.data['id'] as String;
   }
 
-  Future<List<int>> exportCsv() async {
-    final r = await _client.dio.get(
+  Future<List<int>> exportCsv({String? from, String? to}) async {
+    final r = await _client.dio.get<List<int>>(
       '/v1/production/export',
-      queryParameters: {'format': 'csv'},
-      options: _byteOptions(),
+      queryParameters: {'format': 'csv', 'from': ?from, 'to': ?to},
+      options: Options(responseType: ResponseType.bytes),
     );
-    return List<int>.from(r.data as List);
-  }
-
-  static dynamic _byteOptions() {
-    return null; // placeholder — use ResponseType.bytes if needed
+    return r.data ?? const <int>[];
   }
 }

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
 from shared.logging import configure_logging
+from shared.middleware import attach_cors
 from shared.messaging import EventPublisher
 
 from .api.routes_etl import router
@@ -44,6 +45,8 @@ app = FastAPI(
 )
 
 
+
+attach_cors(app)
 @app.get("/health", tags=["meta"])
 async def health() -> dict:
     return {"status": "ok", "service": "etl-service"}

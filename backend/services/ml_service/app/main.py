@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
 from shared.logging import configure_logging
+from shared.middleware import attach_cors
 from shared.messaging import EventPublisher
 
 from .api.routes_ml import router
@@ -46,6 +47,8 @@ app = FastAPI(
 )
 
 
+
+attach_cors(app)
 @app.exception_handler(InferenceError)
 async def inference_error_handler(_: Request, exc: InferenceError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})

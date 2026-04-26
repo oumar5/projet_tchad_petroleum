@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
 from shared.logging import configure_logging
+from shared.middleware import attach_cors
 
 from .api.routes_admin import router as admin_router
 from .api.routes_auth import router as auth_router
@@ -39,6 +40,8 @@ app = FastAPI(
 )
 
 
+
+attach_cors(app)
 @app.get("/health", tags=["meta"])
 async def health() -> dict:
     return {"status": "ok", "service": "auth-service"}
