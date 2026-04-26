@@ -451,7 +451,18 @@ smartbarrel/
 
 ## 10. Plan de migration
 
-### Phase 1 — Fondations (4 sem.)
+Le projet se déroule en **deux grandes phases stratégiques** :
+
+> **Phase 1 — Application logicielle** (saisie de données manuelle ou import Excel/CSV)
+> **Phase 2 — IoT & systèmes embarqués** (capteurs terrain → ingestion automatique)
+
+L'architecture v3 est conçue dès le départ pour absorber les flux IoT de la Phase 2 sans refactor : l'`etl-service` et le bus RabbitMQ servent de point d'entrée unique pour toutes les sources de données, qu'elles soient humaines ou machines.
+
+---
+
+### **PHASE 1 — Application SmartBarrel** (~28 sem.)
+
+#### Jalon 1.1 — Fondations (4 sem.)
 - [ ] Setup monorepo + `shared/` libs
 - [ ] PostgreSQL + schémas + Alembic
 - [ ] Traefik + docker-compose
@@ -459,31 +470,59 @@ smartbarrel/
 - [ ] Migration Excel → PostgreSQL via `etl-service` v1
 - [ ] Boilerplate Flutter avec login
 
-### Phase 2 — Services métier (6 sem.)
+#### Jalon 1.2 — Services métier (6 sem.)
 - [ ] `production-service` (CRUD + KPIs)
 - [ ] `maintenance-service` (CRUD)
 - [ ] Tests d'intégration cross-services
 - [ ] OpenAPI consolidé
 
-### Phase 3 — ML & async (6 sem.)
+#### Jalon 1.3 — ML & async (6 sem.)
 - [ ] `ml-service` (inference des modèles v2)
 - [ ] RabbitMQ + Celery workers
 - [ ] `notification-service` (email + FCM)
 - [ ] Pipeline d'entraînement async
 
-### Phase 4 — Frontend Flutter (8 sem.)
+#### Jalon 1.4 — Frontend Flutter (8 sem.)
 - [ ] Écrans : login, dashboard, production, maintenance, forecast, water
 - [ ] Mode offline (Hive + sync)
 - [ ] Builds iOS / Android / Web
 
-### Phase 5 — Industrialisation (4 sem.)
+#### Jalon 1.5 — Industrialisation (4 sem.)
 - [ ] CI/CD GitHub Actions
 - [ ] Migration K8s
 - [ ] Monitoring + logs centralisés
 - [ ] Backups Postgres
 - [ ] Décommissionnement Streamlit
 
-**Total estimé** : ~28 semaines.
+---
+
+### **PHASE 2 — IoT & systèmes embarqués** (~32 sem.)
+
+Objectif : **automatiser la collecte de données terrain** via capteurs sur les puits, pompes et lignes de production. Élimine la saisie manuelle, fiabilise les données, débloque le temps réel.
+
+> **Détails complets** : voir `docs/iot-roadmap.md`
+
+#### Jalon 2.1 — POC sur 1 puits (8 sem.)
+- [ ] Sélection capteurs (pression, température, débit, vibration)
+- [ ] Edge gateway (Raspberry Pi industriel ou PLC)
+- [ ] Connectivité (LoRaWAN ou cellulaire)
+- [ ] Broker MQTT + ingestion vers `etl-service`
+
+#### Jalon 2.2 — Pilote 1 bloc (12 sem.)
+- [ ] Déploiement sur tous les puits d'un bloc
+- [ ] Alimentation solaire + boîtiers IP68
+- [ ] Intégration SCADA existante (OPC UA / Modbus)
+- [ ] Pré-traitement edge (filtrage, agrégation)
+
+#### Jalon 2.3 — Généralisation (12 sem.)
+- [ ] Roll-out multi-blocs
+- [ ] Re-entraînement des modèles ML sur données haute fréquence
+- [ ] Alertes temps réel (WebSocket vers Flutter)
+- [ ] Dashboard SCADA-like pour opérateurs
+
+---
+
+**Total estimé** : ~60 semaines (Phase 1 + Phase 2).
 
 ---
 
@@ -498,6 +537,7 @@ smartbarrel/
 | Gestion des migrations DB multi-services | Alembic par service, pipelines CI séparés |
 | Connectivité terrain (Tchad) | Mode offline Flutter robuste + sync différée |
 | Souveraineté données | Hébergement on-premise ou VPS Tchad/Afrique |
+| Saut technologique vers l'IoT (Phase 2) | Architecture pensée dès J1 pour l'ingestion machine ; `etl-service` et bus RabbitMQ absorbent les flux capteurs sans refactor |
 
 ---
 

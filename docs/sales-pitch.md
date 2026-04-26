@@ -155,12 +155,21 @@ Trois formules adaptées à la taille de votre opération :
 - Visualisations interactives, exports PDF/Excel
 - Tests automatisés, déploiement Docker
 
-### En cours de développement (v3 — SmartBarrel)
+### Phase 1 — Application SmartBarrel (en cours)
 - Application mobile **Flutter** (iOS + Android + Web)
 - Backend **microservices** FastAPI
 - Authentification **JWT + RBAC** complet
-- Mode **offline** terrain
-- Intégrations SCADA et ERP
+- Mode **offline** terrain pour ingénieurs
+- Imports Excel/CSV automatisés
+
+### Phase 2 — IoT & Capteurs intelligents
+- Déploiement de **capteurs** sur les puits, pompes et lignes (pression, vibration, débit, température)
+- **Systèmes embarqués** (edge gateways) pour collecte automatique
+- **Élimination totale de la saisie manuelle**
+- Données **temps réel** ingérées dans la plateforme
+- Alertes pannes en quelques secondes au lieu de 24h
+- Précision des modèles IA augmentée de **+10 à +20 %**
+- Intégration SCADA existant (OPC UA / Modbus)
 
 ### Vision long terme
 - **Computer Vision** pour analyse d'images d'inspection
