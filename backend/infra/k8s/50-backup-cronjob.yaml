@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: smartbarrel
+spec:
+  schedule: "0 2 * * *"   # tous les jours 02:00 UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dump
+              image: postgres:16-alpine
+              envFrom: [{ secretRef: { name: smartbarrel-env } }]
+              env:
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: smartbarrel-env, key: POSTGRES_PASSWORD } } }
+                - { name: AWS_ACCESS_KEY_ID, valueFrom: { secretKeyRef: { name: backup-s3, key: access_key } } }
+                - { name: AWS_SECRET_ACCESS_KEY, valueFrom: { secretKeyRef: { name: backup-s3, key: secret_key } } }
+                - { name: AWS_DEFAULT_REGION, value: af-south-1 }
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache aws-cli
+                  ts=$(date -u +%F)
+                  pg_dump -h postgres -U $POSTGRES_USER -d $POSTGRES_DB --format=custom --file=/tmp/$ts.dump
+                  aws s3 cp /tmp/$ts.dump s3://smartbarrel-backups/postgres/daily/$ts.dump
+                  echo "Backup uploaded: $ts"

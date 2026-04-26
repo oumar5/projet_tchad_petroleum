@@ -43,6 +43,22 @@ dependencies:
   # Routing
   go_router: ^14.6.2
 
+  # Charts (KPIs, forecast)
+  fl_chart: ^0.69.2
+
+  # Offline cache (key-value)
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.5
+
+  # Firebase / FCM
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.5
+
+  # Date / number formatting
+  intl: ^0.19.0
+  connectivity_plus: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

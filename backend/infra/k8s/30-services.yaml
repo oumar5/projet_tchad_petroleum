@@ -1,0 +1,216 @@
+# Generic deployment template for all 7 microservices.
+# DATABASE_URL is composed from POSTGRES_* secrets at runtime via shared env.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: auth-service, namespace: smartbarrel }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: auth-service, role: jwt-validator } }
+  template:
+    metadata: { labels: { app: auth-service, role: jwt-validator } }
+    spec:
+      containers:
+        - name: auth
+          image: smartbarrel/auth-service:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: smartbarrel-env } }]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwt, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+      volumes:
+        - { name: jwt, secret: { secretName: smartbarrel-jwt-keys } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth-service, namespace: smartbarrel }
+spec:
+  selector: { app: auth-service }
+  ports: [{ port: 8000 }]
+---
+# Repeat the same shape for the other services. To save space the spec uses
+# the same envFrom + volume mounts. Swap the image and labels per service.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: production-service, namespace: smartbarrel }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: production-service, role: jwt-validator } }
+  template:
+    metadata: { labels: { app: production-service, role: jwt-validator } }
+    spec:
+      containers:
+        - name: production
+          image: smartbarrel/production-service:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: smartbarrel-env } }]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwt, readOnly: true }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+      volumes:
+        - { name: jwt, secret: { secretName: smartbarrel-jwt-keys } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: production-service, namespace: smartbarrel }
+spec:
+  selector: { app: production-service }
+  ports: [{ port: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: maintenance-service, namespace: smartbarrel }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: maintenance-service, role: jwt-validator } }
+  template:
+    metadata: { labels: { app: maintenance-service, role: jwt-validator } }
+    spec:
+      containers:
+        - name: maintenance
+          image: smartbarrel/maintenance-service:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: smartbarrel-env } }]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwt, readOnly: true }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+      volumes:
+        - { name: jwt, secret: { secretName: smartbarrel-jwt-keys } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: maintenance-service, namespace: smartbarrel }
+spec:
+  selector: { app: maintenance-service }
+  ports: [{ port: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ml-service, namespace: smartbarrel }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: ml-service, role: jwt-validator } }
+  template:
+    metadata: { labels: { app: ml-service, role: jwt-validator } }
+    spec:
+      containers:
+        - name: ml
+          image: smartbarrel/ml-service:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: smartbarrel-env } }]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwt, readOnly: true }
+            - { name: models, mountPath: /app/models }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+      volumes:
+        - { name: jwt, secret: { secretName: smartbarrel-jwt-keys } }
+        - { name: models, persistentVolumeClaim: { claimName: ml-models } }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: ml-models, namespace: smartbarrel }
+spec:
+  accessModes: [ReadWriteMany]
+  resources: { requests: { storage: 20Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ml-service, namespace: smartbarrel }
+spec:
+  selector: { app: ml-service }
+  ports: [{ port: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: etl-service, namespace: smartbarrel }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: etl-service } }
+  template:
+    metadata: { labels: { app: etl-service, role: jwt-validator } }
+    spec:
+      containers:
+        - name: etl
+          image: smartbarrel/etl-service:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: smartbarrel-env } }]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwt, readOnly: true }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+      volumes:
+        - { name: jwt, secret: { secretName: smartbarrel-jwt-keys } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: etl-service, namespace: smartbarrel }
+spec:
+  selector: { app: etl-service }
+  ports: [{ port: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: notification-service, namespace: smartbarrel }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: notification-service } }
+  template:
+    metadata: { labels: { app: notification-service, role: jwt-validator } }
+    spec:
+      containers:
+        - name: notif
+          image: smartbarrel/notification-service:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: smartbarrel-env } }]
+          env:
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - { name: jwt, mountPath: /etc/jwt, readOnly: true }
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+      volumes:
+        - { name: jwt, secret: { secretName: smartbarrel-jwt-keys } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: notification-service, namespace: smartbarrel }
+spec:
+  selector: { app: notification-service }
+  ports: [{ port: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: docs-aggregator, namespace: smartbarrel }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: docs-aggregator } }
+  template:
+    metadata: { labels: { app: docs-aggregator } }
+    spec:
+      containers:
+        - name: docs
+          image: smartbarrel/docs-aggregator:latest
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: docs-aggregator, namespace: smartbarrel }
+spec:
+  selector: { app: docs-aggregator }
+  ports: [{ port: 8000 }]

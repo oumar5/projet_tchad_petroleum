@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: smartbarrel-api
+  namespace: smartbarrel
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.smartbarrel.td]
+      secretName: smartbarrel-tls
+  rules:
+    - host: api.smartbarrel.td
+      http:
+        paths:
+          - path: /v1/auth
+            pathType: Prefix
+            backend: { service: { name: auth-service, port: { number: 8000 } } }
+          - path: /v1/production
+            pathType: Prefix
+            backend: { service: { name: production-service, port: { number: 8000 } } }
+          - path: /v1/maintenance
+            pathType: Prefix
+            backend: { service: { name: maintenance-service, port: { number: 8000 } } }
+          - path: /v1/ml
+            pathType: Prefix
+            backend: { service: { name: ml-service, port: { number: 8000 } } }
+          - path: /v1/etl
+            pathType: Prefix
+            backend: { service: { name: etl-service, port: { number: 8000 } } }
+          - path: /v1/notifications
+            pathType: Prefix
+            backend: { service: { name: notification-service, port: { number: 8000 } } }
+          - path: /docs
+            pathType: Prefix
+            backend: { service: { name: docs-aggregator, port: { number: 8000 } } }

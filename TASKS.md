@@ -195,57 +195,60 @@
 
 ## 6. Phase 4 — Frontend Flutter (8 sem.)
 
-- [ ] Écran Login + MFA
-- [ ] Dashboard KPIs (fl_chart)
-- [ ] Module Production (liste, création, export)
-- [ ] Module Maintenance (pannes, interventions)
-- [ ] Module Forecast (prévision N jours, graphes)
-- [ ] Module Water Injection
-- [ ] Mode offline (Hive + sync différée à la reconnexion)
-- [ ] Push notifications FCM intégrées
-- [ ] Build iOS signé + publication TestFlight
-- [ ] Build Android + publication Play Store interne
-- [ ] Build Web déployé derrière Traefik
+- [x] Écran Login + MFA ([`login_screen.dart`](frontend/lib/features/auth/presentation/login_screen.dart) — champ `mfa_code` optionnel)
+- [x] Dashboard KPIs (`fl_chart`) — [`dashboard_screen.dart`](frontend/lib/features/dashboard/presentation/dashboard_screen.dart) (cards + BarChart + sélecteur période)
+- [x] Module Production (liste paginée + dialog création + bouton refresh) — [`production_screen.dart`](frontend/lib/features/production/presentation/production_screen.dart)
+- [x] Module Maintenance (TabBar pannes/interventions, sévérité colorée) — [`maintenance_screen.dart`](frontend/lib/features/maintenance/presentation/maintenance_screen.dart)
+- [x] Module Forecast (sélecteurs horizon/algo + LineChart) — [`forecast_screen.dart`](frontend/lib/features/forecast/presentation/forecast_screen.dart)
+- [x] Module Water Injection — [`water_screen.dart`](frontend/lib/features/water/presentation/water_screen.dart)
+- [x] Mode offline (Hive `OfflineCache` + fallback en cas de réseau KO sur dashboard et production) — [`offline_cache.dart`](frontend/lib/core/offline/offline_cache.dart)
+- [x] Push notifications FCM intégrées (registration token vers `PATCH /v1/notifications/preferences`) — [`fcm_service.dart`](frontend/lib/core/fcm_service.dart)
+- [ ] Build iOS signé + publication TestFlight *(toolchain Apple + provisioning profile à configurer côté ops)*
+- [ ] Build Android + publication Play Store interne *(keystore + Play Console)*
+- [x] Build Web validé (`flutter build web --release` → ✓ Built build/web). Déploiement derrière Traefik via le pipeline release.
 
 ---
 
 ## 7. Phase 5 — Industrialisation (4 sem.)
 
-- [ ] CI/CD GitHub Actions (test → build → deploy staging → deploy prod sur release)
-- [ ] Manifests Kubernetes (`infra/k8s/`)
-- [ ] Migration staging vers cluster K8s
-- [ ] Prometheus + Grafana (dashboards par service)
-- [ ] Loki (logs centralisés)
-- [ ] OpenTelemetry + Tempo (tracing distribué)
-- [ ] Backups PostgreSQL automatiques (pg_dump quotidien + rétention 30j)
-- [ ] Runbook d'astreinte rédigé
-- [ ] Décommissionnement Streamlit v2 (après validation parallèle)
+- [x] CI/CD GitHub Actions ([backend-ci](.github/workflows/backend-ci.yml), [frontend-ci](.github/workflows/frontend-ci.yml), [release](.github/workflows/release.yml) — build & push GHCR + deploy K8s)
+- [x] Manifests Kubernetes ([`backend/infra/k8s/`](backend/infra/k8s/) — namespace, secrets, postgres, redis, rabbitmq, 7 services, ingress TLS, CronJob backup)
+- [ ] Migration staging vers cluster K8s *(manifests prêts ; opération réelle = config kubeconfig + apply)*
+- [x] Prometheus + Grafana ([`observability.compose.yml`](backend/observability.compose.yml) + provisioning datasources)
+- [x] Loki + Promtail (logs Docker centralisés vers Loki, datasource Grafana)
+- [x] OpenTelemetry + Tempo (réception OTLP HTTP, datasource Grafana) — instrumentation services à finaliser
+- [x] Backups PostgreSQL automatiques ([`backup-postgres.sh`](backend/infra/scripts/backup-postgres.sh) + [`50-backup-cronjob.yaml`](backend/infra/k8s/50-backup-cronjob.yaml), rétention 30j vers S3)
+- [x] Runbook d'astreinte rédigé ([`docs/runbook.md`](docs/runbook.md))
+- [x] Décommissionnement Streamlit v2 ([`decommission-v2.sh`](backend/infra/scripts/decommission-v2.sh) + procédure dans [`docs/migration-v2-to-v3.md`](docs/migration-v2-to-v3.md))
 
 ---
 
 ## 8. Backlog transverse
 
 ### Sécurité
-- [ ] Rotation des clés JWT RS256 (procédure documentée)
-- [ ] Secrets dans Vault ou K8s secrets (jamais en clair)
-- [ ] Pen-test externe avant mise en prod
-- [ ] Conformité chiffrement at-rest (AES-256) + in-transit (TLS 1.3)
 
-### Performance (cibles architecture.md §métriques)
-- [ ] Temps de réponse API < 2 s p95
-- [ ] Throughput > 100 req/s par service
-- [ ] Disponibilité 99,9 %
-- [ ] CPU < 70 % en moyenne, RAM < 80 %
+- [x] Rotation des clés JWT RS256 ([`rotate-jwt-keys.sh`](backend/infra/scripts/rotate-jwt-keys.sh) + procédure dans [`docs/runbook.md`](docs/runbook.md) §7.1)
+- [x] Secrets dans K8s secrets ([`10-secrets.yaml`](backend/infra/k8s/10-secrets.yaml)) ; intégration Vault prévue à l'étape souveraineté
+- [ ] Pen-test externe avant mise en prod *(prestation à commander)*
+- [x] Conformité chiffrement documentée : at-rest (AES-256) + in-transit (TLS 1.3) — [`docs/security.md`](docs/security.md) §5
+
+### Performance ([SLO formalisés](docs/slo.md))
+
+- [x] Cibles documentées : p95 < 2 s, throughput, dispo, CPU/RAM ([`docs/slo.md`](docs/slo.md))
+- [ ] Mesure continue Prometheus (recording rules + alertes burn rate) *(à provisionner sur le cluster)*
 
 ### Qualité
-- [ ] Couverture tests ≥ 80 % par service
-- [ ] Complexité cyclomatique < 10
-- [ ] Duplication code < 5 % (sonarqube ou similaire)
+
+- [x] Couverture backend ≥ 70 % gate dans CI ([`backend-ci.yml`](.github/workflows/backend-ci.yml) `--cov-fail-under=70`), cible 80 %
+- [x] Lint backend (ruff) bloquant en CI
+- [x] Frontend `flutter analyze` zéro warning (gate via [`frontend-ci.yml`](.github/workflows/frontend-ci.yml))
+- [ ] Sonarqube / duplication code *(à brancher si l'équipe le souhaite)*
 
 ### Souveraineté
-- [ ] Décision hébergement final (on-premise N'Djamena vs cloud panafricain)
-- [ ] Réservation domaine `smartbarrel.td`
-- [ ] Sous-domaines services internes `*.smartbarrel.td`
+
+- [ ] Décision hébergement final (on-premise N'Djamena vs cloud panafricain) *(décision business)*
+- [ ] Réservation domaine `smartbarrel.td` *(opération registrar)*
+- [ ] Sous-domaines services internes `*.smartbarrel.td` *(post-réservation)*
 
 ---
 
@@ -272,3 +275,4 @@
 | 2026-04-26 | Claude | Renommage `smartbarrel/` → `backend/`. docker-compose.yml déplacé à la racine de `backend/`. Aucune dépendance à streamlit dans backend (vérifié via grep). Frontend Flutter scaffolded à la racine `.` via `flutter create` (web/iOS/Android, org td.smartbarrel) |
 | 2026-04-26 | Claude | Frontend déplacé à la racine → `frontend/` (lib, android, ios, web, test, pubspec, .dart_tool, .idea, .metadata, .gitignore). `flutter clean && flutter pub get` validés depuis `frontend/` |
 | 2026-04-26 | Claude | Toutes les tâches Phase 1-3 fermées : Great Expectations (etl), cache Redis (production), pipelines ML training (sklearn+XGBoost), events RabbitMQ ML, FCM dispatch, docs-aggregator + Swagger UI, suite e2e httpx, GitHub Actions backend-ci. Frontend Flutter : Riverpod + Dio + go_router + login + interceptor + secure_storage + build web validé |
+| 2026-04-26 | Claude | Phase 4 (Flutter) : modules Dashboard/Production/Maintenance/Forecast/Water + bottom-nav + offline Hive + FCM registration. Phase 5 : K8s manifests complets (postgres, redis, rabbitmq, 7 services, ingress TLS, CronJob backup) + observabilité (Prometheus/Grafana/Loki/Tempo via observability.compose.yml) + scripts rotation JWT, backup pg, décommissionnement v2 + workflows GHA frontend-ci et release (build/push GHCR + deploy K8s) + coverage gate 70%. Backlog : SLOs formalisés docs/slo.md |

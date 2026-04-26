@@ -25,15 +25,16 @@ jobs:
           pip install --upgrade pip
           pip install -r shared/requirements.txt
           for s in services/*/requirements.txt; do pip install -r "$s" || true; done
-          pip install pytest ruff black
+          pip install pytest pytest-cov ruff black
       - name: Lint
         run: |
           ruff check shared services
-      - name: Unit tests
+      - name: Unit tests + coverage
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
         run: |
-          pytest services/*/tests -q
+          pytest services/*/tests --cov=services --cov=shared \
+                 --cov-report=term-missing --cov-fail-under=70 -q
 
   e2e-tests:
     runs-on: ubuntu-latest
