@@ -1,0 +1,76 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -r shared/requirements.txt
+          for s in services/*/requirements.txt; do pip install -r "$s" || true; done
+          pip install pytest ruff black
+      - name: Lint
+        run: |
+          ruff check shared services
+      - name: Unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: |
+          pytest services/*/tests -q
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Generate JWT keys
+        run: |
+          mkdir -p infra/jwt
+          openssl genrsa -out infra/jwt/private.pem 4096
+          openssl rsa -in infra/jwt/private.pem -pubout -out infra/jwt/public.pem
+      - name: Boot stack
+        run: |
+          cp .env.example .env
+          docker compose -f smartbarrel.compose.yml up -d --build
+      - name: Wait for healthy services
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fs http://api.localhost/v1/auth/openapi.json >/dev/null; then
+              echo "Stack ready"; exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f smartbarrel.compose.yml logs --tail=200
+          exit 1
+      - name: Run migrations
+        run: make migrate
+      - name: Install e2e deps
+        run: pip install httpx pytest
+      - name: Run e2e
+        run: pytest tests/e2e -q
+      - name: Tear down
+        if: always()
+        run: docker compose -f smartbarrel.compose.yml down -v

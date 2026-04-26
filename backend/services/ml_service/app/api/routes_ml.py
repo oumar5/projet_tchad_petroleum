@@ -27,6 +27,15 @@ def _serialize_model(m: MLModel) -> dict:
     }
 
 
+async def _publish(request: Request, routing_key: str, payload: dict) -> None:
+    publisher = getattr(request.app.state, "publisher", None)
+    if publisher is not None:
+        try:
+            await publisher.publish(routing_key, payload)
+        except Exception:
+            pass
+
+
 @router.post("/predict/maintenance", response_model=PredictionResponse)
 async def predict_maintenance(
     body: PredictMaintenanceRequest,
@@ -49,6 +58,10 @@ async def predict_maintenance(
     )
     session.add(pred)
     await session.flush()
+    await _publish(request, "prediction.completed", {
+        "prediction_id": str(pred.id), "type": "maintenance",
+        "model_id": str(model_record.id), "block": body.block,
+    })
 
     return PredictionResponse(
         predictions=[{
@@ -80,6 +93,10 @@ async def predict_forecast(
     )
     session.add(pred)
     await session.flush()
+    await _publish(request, "prediction.completed", {
+        "prediction_id": str(pred.id), "type": "forecast",
+        "model_id": str(model_record.id),
+    })
     return PredictionResponse(
         predictions=[{"target": body.target, "horizon_days": body.horizon_days,
                       "stub_prediction": True}],
@@ -107,6 +124,10 @@ async def predict_water(
     )
     session.add(pred)
     await session.flush()
+    await _publish(request, "prediction.completed", {
+        "prediction_id": str(pred.id), "type": "water",
+        "model_id": str(model_record.id), "block": body.block,
+    })
     return PredictionResponse(
         predictions=[{"block": body.block, "stub_prediction": True}],
         model=_serialize_model(model_record),
@@ -117,6 +138,7 @@ async def predict_water(
 async def train(
     body: TrainRequest,
     user: Annotated[CurrentUser, Depends(require_permission("ml:train"))],
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> JobResponse:
     job = MLJob(
@@ -128,6 +150,10 @@ async def train(
 
     from ..workers.celery_app import train_task
     train_task.delay(str(job.id), body.model_type, body.algorithm, body.params)
+    await _publish(request, "model.trained", {
+        "job_id": str(job.id), "model_type": body.model_type,
+        "algorithm": body.algorithm, "status": "queued",
+    })
 
     return JobResponse(job_id=job.id, status=job.status, created_at=job.created_at)
 

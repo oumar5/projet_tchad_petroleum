@@ -5,12 +5,13 @@ from datetime import date as Date, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.auth import CurrentUser, require_permission
 
+from ..core.cache import KpiCache
 from ..models import Block, DailyProduction, Well
 from ..schemas import (
     BlockResponse, DailyProductionCreate, DailyProductionResponse, KpiResponse,
@@ -84,6 +85,7 @@ async def list_daily(
 async def create_daily(
     body: DailyProductionCreate,
     user: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     block = (await session.execute(
@@ -111,18 +113,28 @@ async def create_daily(
     )
     session.add(dp)
     await session.flush()
+    cache: KpiCache | None = getattr(request.app.state, "kpi_cache", None)
+    if cache is not None:
+        await cache.invalidate()
     return {"id": str(dp.id)}
 
 
 @router.get("/kpis", response_model=KpiResponse)
 async def kpis(
     _: Annotated[CurrentUser, Depends(require_permission("production:read"))],
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
     period: str = "30d",
 ) -> KpiResponse:
     days = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period)
     if days is None:
         raise HTTPException(400, "period must be 7d|30d|90d|1y")
+
+    cache: KpiCache | None = getattr(request.app.state, "kpi_cache", None)
+    if cache is not None:
+        cached = await cache.get(period)
+        if cached is not None:
+            return KpiResponse(**cached)
 
     end = Date.today()
     start = end - timedelta(days=days)
@@ -146,11 +158,14 @@ async def kpis(
         delta = ((float(cur_total) - prev_total) / prev_total) * 100
 
     avg_day = float(cur_total) / cur_count if cur_count else 0
-    return KpiResponse(
+    response = KpiResponse(
         period=period, production_total_bbl=float(cur_total),
         production_avg_bbl_day=avg_day, watercut_avg_pct=float(cur_wc),
         active_wells_avg=float(cur_wells), delta_vs_previous_pct=delta,
     )
+    if cache is not None:
+        await cache.set(period, response.model_dump())
+    return response
 
 
 @router.get("/export")

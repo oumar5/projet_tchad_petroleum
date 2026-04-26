@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
 from shared.logging import configure_logging
+from shared.messaging import EventPublisher
 
 from .api.routes_ml import router
 from .core.settings import get_settings
@@ -24,7 +25,14 @@ async def lifespan(app: FastAPI):
         issuer=settings.jwt_issuer,
     )
     app.state.inference = InferenceService(settings.models_dir)
+    app.state.publisher = EventPublisher(settings.rabbitmq_url)
+    try:
+        await app.state.publisher.connect()
+    except Exception:
+        app.state.publisher = None
     yield
+    if getattr(app.state, "publisher", None):
+        await app.state.publisher.close()
     await engine.dispose()
 
 

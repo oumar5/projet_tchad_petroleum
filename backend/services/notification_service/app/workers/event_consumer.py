@@ -50,6 +50,7 @@ async def handle_event(routing_key: str, payload: dict[str, Any],
                 recipient=r, subject="SmartBarrel — Alerte de panne",
                 body_html=body,
             )
+        await _push_fcm_to_subscribers(session_factory, settings, payload)
 
 
 async def _send_and_record(session_factory, settings, *, channel, recipient,
@@ -66,6 +67,44 @@ async def _send_and_record(session_factory, settings, *, channel, recipient,
             channel=channel, recipient=recipient, subject=subject,
             body=body_html, status=status, error=error,
         ))
+        await session.commit()
+
+
+async def _push_fcm_to_subscribers(session_factory, settings: NotificationSettings,
+                                   payload: dict[str, Any]) -> None:
+    from sqlalchemy import select
+
+    from ..models import Preference
+    from ..services.fcm_sender import FcmSender
+
+    sender = FcmSender(settings.fcm_credentials_path)
+    title = "SmartBarrel — Alerte panne"
+    body = f"Bloc {payload.get('block', '?')} — risque {payload.get('probability', '?')}%"
+
+    async with session_factory() as session:
+        rows = (await session.execute(
+            select(Preference).where(
+                Preference.failure_alerts.is_(True),
+                Preference.push_enabled.is_(True),
+                Preference.fcm_token.is_not(None),
+            )
+        )).scalars()
+        for pref in rows:
+            ok = False
+            err: str | None = None
+            try:
+                ok = await sender.send(
+                    fcm_token=pref.fcm_token, title=title, body=body, data=payload,
+                )
+            except Exception as e:
+                err = str(e)
+            session.add(SentMessage(
+                user_id=pref.user_id, channel="push",
+                recipient=pref.fcm_token or "",
+                subject=title, body=body,
+                status="sent" if ok else "skipped",
+                error=err,
+            ))
         await session.commit()
 
 

@@ -51,11 +51,23 @@ def read_failures_sheet(file_path: Path) -> pd.DataFrame:
 
 
 async def ingest_excel(
-    session: AsyncSession, file_path: Path, default_block: str = "X"
+    session: AsyncSession, file_path: Path, default_block: str = "X",
+    strict_validation: bool = False,
 ) -> IngestionResult:
-    """Idempotent ingestion: ON CONFLICT (date, block_id, well_id) DO NOTHING."""
+    """Idempotent ingestion: ON CONFLICT (date, block_id, well_id) DO NOTHING.
+
+    If `strict_validation` is True, abort when Great Expectations fails.
+    """
+    from .data_quality import validate_production_df
+
     digest = file_sha256(file_path)
     df_prod = read_production_sheet(file_path)
+
+    validation = validate_production_df(df_prod)
+    if strict_validation and not validation.success:
+        raise ValueError(
+            f"Data validation failed: {validation.failed_expectations}"
+        )
 
     # Ensure default block exists
     await session.execute(text("""

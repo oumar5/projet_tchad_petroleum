@@ -183,6 +183,17 @@ services:
       - "traefik.http.services.notif.loadbalancer.server.port=8000"
     networks: [smartbarrel-net]
 
+  docs-aggregator:
+    build:
+      context: .
+      dockerfile: services/docs_aggregator/Dockerfile
+    container_name: smartbarrel-docs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.docs.rule=Host(`api.localhost`) && PathPrefix(`/docs`)"
+      - "traefik.http.services.docs.loadbalancer.server.port=8000"
+    networks: [smartbarrel-net]
+
 volumes:
   postgres_data:
   ml_models:

@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
 from shared.logging import configure_logging
 
 from .api.routes_production import router
+from .core.cache import KpiCache
 from .core.settings import get_settings
 
 
@@ -22,7 +24,10 @@ async def lifespan(app: FastAPI):
         algorithm=settings.jwt_algorithm,
         issuer=settings.jwt_issuer,
     )
+    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    app.state.kpi_cache = KpiCache(app.state.redis, ttl_seconds=settings.cache_ttl_seconds)
     yield
+    await app.state.redis.aclose()
     await engine.dispose()
 
 
