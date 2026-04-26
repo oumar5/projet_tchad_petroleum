@@ -1,4 +1,4 @@
-# SmartBarrel — Monorepo
+# Backend SmartBarrel
 
 Plateforme microservices pour l'optimisation des opérations pétrolières.
 Cf. [`../docs/future-architecture.md`](../docs/future-architecture.md) pour la vision complète.
@@ -6,7 +6,10 @@ Cf. [`../docs/future-architecture.md`](../docs/future-architecture.md) pour la v
 ## Structure
 
 ```
-smartbarrel/
+backend/
+├── docker-compose.yml          # Stack dev complète
+├── .env.example
+├── Makefile
 ├── services/
 │   ├── auth_service/           # JWT + RBAC + MFA
 │   ├── production_service/     # CRUD prod, KPIs, exports
@@ -21,31 +24,31 @@ smartbarrel/
 │   ├── logging/                # Logger JSON + trace_id
 │   └── config/                 # Pydantic Settings
 └── infra/
-    ├── docker-compose.dev.yml
-    ├── docker-compose.prod.yml
+    ├── jwt/                    # Clés RS256 (dev)
+    ├── postgres/init/          # SQL d'initialisation
     ├── traefik/
-    ├── postgres/
     └── k8s/
 ```
 
 ## Démarrage local
 
 ```bash
-cd infra
-cp .env.example .env
-docker compose -f docker-compose.dev.yml up -d
+make jwt-keys     # génère les clés RS256
+make dev-up       # docker compose up
+make migrate      # applique les migrations Alembic
 ```
 
 Services disponibles :
-- API Gateway : http://api.localhost
-- Traefik dashboard : http://traefik.localhost:8080
-- PostgreSQL : localhost:5432 (user: smartbarrel)
-- Redis : localhost:6379
-- RabbitMQ management : http://localhost:15672 (guest/guest)
+
+- API Gateway : `http://api.localhost`
+- Traefik dashboard : `http://localhost:8080`
+- PostgreSQL : `localhost:5432` (user: `smartbarrel`)
+- Redis : `localhost:6379`
+- RabbitMQ management : `http://localhost:15672` (guest/guest)
+- MailHog : `http://localhost:8025`
 
 ## Tests
 
 ```bash
-cd services/<service>
-pytest
+make test
 ```

@@ -9,7 +9,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -75,13 +75,13 @@ services:
 
   auth-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/auth_service/Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      - ./jwt:/etc/jwt:ro
+      - ./infra/jwt:/etc/jwt:ro
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -93,13 +93,13 @@ services:
 
   production-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/production_service/Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      - ./jwt:/etc/jwt:ro
+      - ./infra/jwt:/etc/jwt:ro
     depends_on:
       postgres: { condition: service_healthy }
     labels:
@@ -110,13 +110,13 @@ services:
 
   maintenance-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/maintenance_service/Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      - ./jwt:/etc/jwt:ro
+      - ./infra/jwt:/etc/jwt:ro
     depends_on:
       postgres: { condition: service_healthy }
     labels:
@@ -127,13 +127,13 @@ services:
 
   ml-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/ml_service/Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      - ./jwt:/etc/jwt:ro
+      - ./infra/jwt:/etc/jwt:ro
       - ml_models:/app/models
     depends_on:
       postgres: { condition: service_healthy }
@@ -146,14 +146,14 @@ services:
 
   etl-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/etl_service/Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      - ./jwt:/etc/jwt:ro
-      - ../../data:/app/data:ro
+      - ./infra/jwt:/etc/jwt:ro
+      - ../data:/app/data:ro
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -165,13 +165,13 @@ services:
 
   notification-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/notification_service/Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      - ./jwt:/etc/jwt:ro
+      - ./infra/jwt:/etc/jwt:ro
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }

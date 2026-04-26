@@ -77,30 +77,30 @@
 
 ### 3.1 Setup monorepo
 
-- [x] Créer dossier [`smartbarrel/`](smartbarrel/)
+- [x] Créer dossier [`backend/`](backend/)
 - [x] Structure `services/`, `shared/`, `infra/` (mobile_app/ → Phase 4)
-- [x] [`shared/auth/`](smartbarrel/shared/auth/) : middleware JWT + RBAC
-- [x] [`shared/db/`](smartbarrel/shared/db/) : base SQLAlchemy + helpers async
-- [x] [`shared/messaging/`](smartbarrel/shared/messaging/) : wrappers RabbitMQ (publisher + consumer)
-- [x] [`shared/logging/`](smartbarrel/shared/logging/) : logger JSON structuré + `trace_id`
-- [x] [`shared/config/`](smartbarrel/shared/config/) : Pydantic Settings typé
+- [x] [`shared/auth/`](backend/shared/auth/) : middleware JWT + RBAC
+- [x] [`shared/db/`](backend/shared/db/) : base SQLAlchemy + helpers async
+- [x] [`shared/messaging/`](backend/shared/messaging/) : wrappers RabbitMQ (publisher + consumer)
+- [x] [`shared/logging/`](backend/shared/logging/) : logger JSON structuré + `trace_id`
+- [x] [`shared/config/`](backend/shared/config/) : Pydantic Settings typé
 
 ### 3.2 Infrastructure
 
-- [x] PostgreSQL 16 — [`smartbarrel/infra/docker-compose.dev.yml`](smartbarrel/infra/docker-compose.dev.yml)
-- [x] Création des 6 schémas via init SQL — [`infra/postgres/init/`](smartbarrel/infra/postgres/init/)
+- [x] PostgreSQL 16 — [`backend/docker-compose.yml`](backend/docker-compose.yml)
+- [x] Création des 6 schémas via init SQL — [`infra/postgres/init/`](backend/infra/postgres/init/)
 - [x] Alembic configuré pour chaque service (un schéma chacun)
 - [x] Redis 7 (cache + blocklist)
 - [x] RabbitMQ + management console
 - [x] Traefik 3 (routing + dashboard)
 - [x] MailHog pour SMTP en dev
-- [x] [`Makefile`](smartbarrel/Makefile) avec `dev-up`, `migrate`, `test`, `jwt-keys`
+- [x] [`Makefile`](backend/Makefile) avec `dev-up`, `migrate`, `test`, `jwt-keys`
 
 ### 3.3 auth-service v1
 
 - [x] Modèles SQLAlchemy : `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `audit_log`, `password_resets`, `mfa_recovery_codes`
-- [x] Migration Alembic initiale ([`0001_init_auth.py`](smartbarrel/services/auth_service/alembic/versions/0001_init_auth.py))
-- [x] Seed : 4 rôles + permissions catalogue ([`0002_seed_rbac.py`](smartbarrel/services/auth_service/alembic/versions/0002_seed_rbac.py))
+- [x] Migration Alembic initiale ([`0001_init_auth.py`](backend/services/auth_service/alembic/versions/0001_init_auth.py))
+- [x] Seed : 4 rôles + permissions catalogue ([`0002_seed_rbac.py`](backend/services/auth_service/alembic/versions/0002_seed_rbac.py))
 - [x] `POST /v1/auth/register`
 - [x] `POST /v1/auth/login` → JWT RS256 (access 15min + refresh 7j) + MFA
 - [x] `POST /v1/auth/refresh`
@@ -115,7 +115,7 @@
 
 ### 3.4 etl-service v1 — migration Excel → PostgreSQL
 
-- [x] Script d'ingestion `Données de production Rev.xlsx` ([`excel_ingestor.py`](smartbarrel/services/etl_service/app/services/excel_ingestor.py))
+- [x] Script d'ingestion `Données de production Rev.xlsx` ([`excel_ingestor.py`](backend/services/etl_service/app/services/excel_ingestor.py))
 - [ ] Validation Great Expectations *(reporté Phase 2)*
 - [x] Insertion dans `production.daily_production` (mapping colonnes Excel → SQL)
 - [x] Publication événement `data.ingested.production` sur RabbitMQ
@@ -123,9 +123,10 @@
 - [x] Tracking dans `etl.runs` + `etl.snapshots` avec hash SHA-256
 - [x] Endpoints `/v1/etl/ingest/excel`, `/v1/etl/runs`, `/v1/etl/runs/{id}`
 
-### 3.5 Boilerplate Flutter
-- [ ] Projet Flutter 3.x initialisé
-- [ ] Architecture Riverpod + Dio + go_router
+### 3.5 Boilerplate Flutter ([`frontend/`](frontend/))
+
+- [x] Projet Flutter 3.41.2 initialisé dans `frontend/` (org `td.smartbarrel`, name `smartbarrel`, plateformes web+ios+android), `flutter pub get` OK
+- [ ] Architecture Riverpod + Dio + go_router *(scaffold seul, sans deps métier)*
 - [ ] Écran de login + stockage `flutter_secure_storage` du refresh token
 - [ ] Intercepteur Dio : injection `Authorization: Bearer ...` + refresh sur 401
 - [ ] Builds Web / iOS / Android lancent et atteignent l'écran login
@@ -136,7 +137,7 @@
 
 ### 4.1 production-service
 
-- [x] Schéma SQL : `wells`, `blocks`, `daily_production` ([`0001_init_production.py`](smartbarrel/services/production_service/alembic/versions/0001_init_production.py))
+- [x] Schéma SQL : `wells`, `blocks`, `daily_production` ([`0001_init_production.py`](backend/services/production_service/alembic/versions/0001_init_production.py))
 - [x] `GET /v1/production/daily?from=&to=&block=` (paginé)
 - [x] `POST /v1/production/daily` (production:write)
 - [x] `GET /v1/production/wells`, `GET /v1/production/blocks`
@@ -147,7 +148,7 @@
 
 ### 4.2 maintenance-service
 
-- [x] Schéma SQL : `failures`, `interventions`, `equipment` ([`0001_init_maintenance.py`](smartbarrel/services/maintenance_service/alembic/versions/0001_init_maintenance.py))
+- [x] Schéma SQL : `failures`, `interventions`, `equipment` ([`0001_init_maintenance.py`](backend/services/maintenance_service/alembic/versions/0001_init_maintenance.py))
 - [x] `GET /v1/maintenance/failures` + filtres `from/to/block`
 - [x] `POST /v1/maintenance/failures` (maintenance:write, severity validée)
 - [x] `GET/POST /v1/maintenance/interventions`
@@ -165,7 +166,7 @@
 
 ### 5.1 ml-service — inference
 
-- [ ] Réutilisation des modèles `streamlit/src/models/` *(stub : InferenceService prêt à charger des `.joblib`)*
+- [ ] Implémentation des modèles ML dans `backend/services/ml_service/` *(InferenceService prêt à charger des `.joblib` ; pas d'import depuis streamlit)*
 - [x] Registre de modèles versionné (table `ml.models`, contrainte `one_active_per_type`)
 - [x] `POST /v1/ml/predict/maintenance`
 - [x] `POST /v1/ml/predict/forecast`
@@ -176,7 +177,7 @@
 
 ### 5.2 ml-service — entraînement async
 
-- [x] Celery worker + RabbitMQ ([`celery_app.py`](smartbarrel/services/ml_service/app/workers/celery_app.py))
+- [x] Celery worker + RabbitMQ ([`celery_app.py`](backend/services/ml_service/app/workers/celery_app.py))
 - [x] `POST /v1/ml/train` → renvoie `job_id` (202)
 - [x] `GET /v1/ml/jobs/{job_id}` (statut, résultat, erreur)
 - [ ] Publication `prediction.completed` / `model.trained` *(handler à finaliser)*
@@ -268,3 +269,5 @@
 | 2026-04-26 | Claude | Création initiale du TASKS.md depuis lecture exhaustive de `docs/` |
 | 2026-04-26 | Claude | Streamlit verrouillé (§1.2). Production des 5 docs §2.2 : api-reference, migration-v2-to-v3, runbook, security, data-model |
 | 2026-04-26 | Claude | Backend SmartBarrel : monorepo + 4 shared libs + infra docker-compose + 6 microservices (auth, production, maintenance, ml, etl, notification) avec migrations Alembic, JWT RS256, RBAC, MFA, Celery, RabbitMQ events, ingestion Excel idempotente |
+| 2026-04-26 | Claude | Renommage `smartbarrel/` → `backend/`. docker-compose.yml déplacé à la racine de `backend/`. Aucune dépendance à streamlit dans backend (vérifié via grep). Frontend Flutter scaffolded à la racine `.` via `flutter create` (web/iOS/Android, org td.smartbarrel) |
+| 2026-04-26 | Claude | Frontend déplacé à la racine → `frontend/` (lib, android, ios, web, test, pubspec, .dart_tool, .idea, .metadata, .gitignore). `flutter clean && flutter pub get` validés depuis `frontend/` |

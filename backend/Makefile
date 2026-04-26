@@ -21,13 +21,14 @@ jwt-keys:
 	@echo "JWT keys generated in infra/jwt/"
 
 dev-up: jwt-keys
-	cd infra && docker compose -f docker-compose.dev.yml up -d --build
+	@if [ ! -f .env ]; then cp .env.example .env; fi
+	docker compose up -d --build
 
 dev-down:
-	cd infra && docker compose -f docker-compose.dev.yml down
+	docker compose down
 
 dev-logs:
-	cd infra && docker compose -f docker-compose.dev.yml logs -f --tail=100
+	docker compose logs -f --tail=100
 
 migrate:
 	@for svc in $(SERVICES); do \
