@@ -12,7 +12,11 @@ from shared.auth import CurrentUser, require_permission
 from ..core.settings import AuthSettings, get_settings
 from ..models import AuditLog, Role, User
 from ..schemas.admin import (
-    PermissionResponse, RoleCreate, RoleResponse, UserCreate, UserResponse,
+    PermissionResponse,
+    RoleCreate,
+    RoleResponse,
+    UserCreate,
+    UserResponse,
     UserRolesUpdate,
 )
 from ..services.audit_service import AuditService

@@ -1,6 +1,9 @@
 from services.auth_service.app.core.security import (
-    generate_mfa_secret, hash_password, mfa_provisioning_uri,
-    verify_mfa_code, verify_password,
+    generate_mfa_secret,
+    hash_password,
+    mfa_provisioning_uri,
+    verify_mfa_code,
+    verify_password,
 )
 
 

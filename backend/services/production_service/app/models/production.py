@@ -3,8 +3,17 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Date as DateCol, ForeignKey, Index, Integer,
-    Numeric, Text, UniqueConstraint,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy import (
+    Date as DateCol,
 )
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship

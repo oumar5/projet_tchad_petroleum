@@ -1,7 +1,8 @@
 """Production endpoints."""
 import csv
 import io
-from datetime import date as Date, timedelta
+from datetime import date as Date
+from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -14,7 +15,9 @@ from shared.auth import CurrentUser, require_permission
 from ..core.cache import KpiCache
 from ..models import Block, DailyProduction, Well
 from ..schemas import (
-    BlockResponse, DailyProductionCreate, DailyProductionResponse, KpiResponse,
+    BlockResponse,
+    DailyProductionCreate,
+    KpiResponse,
     WellResponse,
 )
 from .deps import get_db

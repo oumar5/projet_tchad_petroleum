@@ -3,7 +3,6 @@ from typing import Any
 
 from jinja2 import Environment, StrictUndefined
 
-
 _env = Environment(autoescape=True, undefined=StrictUndefined)
 
 

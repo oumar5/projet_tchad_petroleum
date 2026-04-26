@@ -8,11 +8,17 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import (
-    GradientBoostingClassifier, GradientBoostingRegressor,
-    RandomForestClassifier, RandomForestRegressor,
+    GradientBoostingClassifier,
+    GradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
 )
 from sklearn.metrics import (
-    accuracy_score, f1_score, mean_absolute_error, mean_squared_error, r2_score,
+    accuracy_score,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
 )
 from sklearn.model_selection import train_test_split
 

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
@@ -9,7 +10,7 @@ from shared.messaging import EventPublisher
 
 from .api.routes_ml import router
 from .core.settings import get_settings
-from .services.inference import InferenceService
+from .services.inference import InferenceError, InferenceService
 
 
 @asynccontextmanager
@@ -43,6 +44,11 @@ app = FastAPI(
     openapi_url="/v1/ml/openapi.json",
     docs_url="/v1/ml/docs",
 )
+
+
+@app.exception_handler(InferenceError)
+async def inference_error_handler(_: Request, exc: InferenceError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 @app.get("/health", tags=["meta"])

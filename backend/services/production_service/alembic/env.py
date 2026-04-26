@@ -20,9 +20,7 @@ target_metadata = Base.metadata
 
 
 def include_object(obj, name, type_, reflected, compare_to):
-    if type_ == "table" and getattr(obj, "schema", None) != "production":
-        return False
-    return True
+    return not (type_ == "table" and getattr(obj, "schema", None) != "production")
 
 
 def do_run_migrations(connection: Connection) -> None:

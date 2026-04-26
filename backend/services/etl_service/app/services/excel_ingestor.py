@@ -1,9 +1,7 @@
 """Excel ingestion logic — maps the legacy v2 Excel into PostgreSQL."""
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 from sqlalchemy import text

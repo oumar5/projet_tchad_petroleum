@@ -3,20 +3,29 @@ import secrets
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from shared.auth import CurrentUser, get_current_user
 
 from ..core.redis_client import (
-    record_login_failure, reset_login_failures,
+    record_login_failure,
+    reset_login_failures,
 )
 from ..core.security import (
-    generate_mfa_secret, hash_password, mfa_provisioning_uri, verify_mfa_code,
+    generate_mfa_secret,
+    mfa_provisioning_uri,
+    verify_mfa_code,
 )
 from ..core.settings import AuthSettings, get_settings
 from ..schemas import (
-    LoginRequest, MeResponse, MfaEnableResponse, PasswordResetConfirm,
-    PasswordResetRequest, RefreshRequest, RegisterRequest, TokenResponse,
+    LoginRequest,
+    MeResponse,
+    MfaEnableResponse,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
 )
 from ..services.audit_service import AuditService
 from ..services.token_service import TokenService

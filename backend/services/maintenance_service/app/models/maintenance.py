@@ -1,12 +1,22 @@
-from datetime import date as Date, datetime
+from datetime import date as Date
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
-    CheckConstraint, Date as DateCol, DateTime, ForeignKey, Index, Integer,
-    Numeric, Text,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
+from sqlalchemy import (
+    Date as DateCol,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base

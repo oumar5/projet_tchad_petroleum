@@ -1,3 +1,4 @@
+import contextlib
 from typing import Annotated
 from uuid import UUID
 
@@ -9,8 +10,13 @@ from shared.auth import CurrentUser, require_permission
 
 from ..models import MLJob, MLModel, MLPrediction
 from ..schemas import (
-    JobResponse, ModelResponse, PredictForecastRequest, PredictMaintenanceRequest,
-    PredictWaterRequest, PredictionResponse, TrainRequest,
+    JobResponse,
+    ModelResponse,
+    PredictForecastRequest,
+    PredictionResponse,
+    PredictMaintenanceRequest,
+    PredictWaterRequest,
+    TrainRequest,
 )
 from .deps import get_db
 
@@ -30,10 +36,8 @@ def _serialize_model(m: MLModel) -> dict:
 async def _publish(request: Request, routing_key: str, payload: dict) -> None:
     publisher = getattr(request.app.state, "publisher", None)
     if publisher is not None:
-        try:
+        with contextlib.suppress(Exception):
             await publisher.publish(routing_key, payload)
-        except Exception:
-            pass
 
 
 @router.post("/predict/maintenance", response_model=PredictionResponse)

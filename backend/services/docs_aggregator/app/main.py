@@ -47,7 +47,7 @@ async def consolidated_openapi() -> JSONResponse:
         "components": {"schemas": {}},
         "tags": [],
     }
-    for name, spec in zip(UPSTREAMS.keys(), results):
+    for name, spec in zip(UPSTREAMS.keys(), results, strict=False):
         if "_error" in spec:
             continue
         merged["paths"].update(spec.get("paths", {}))

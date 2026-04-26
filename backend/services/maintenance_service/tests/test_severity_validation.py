@@ -1,8 +1,9 @@
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
 from services.maintenance_service.app.schemas import FailureCreate
-from datetime import date
 
 
 def test_severity_accepted():

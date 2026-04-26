@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
@@ -28,10 +28,8 @@ async def lifespan(app: FastAPI):
     app.state.consumer_task = consumer_task
     yield
     consumer_task.cancel()
-    try:
+    with suppress(asyncio.CancelledError):
         await consumer_task
-    except asyncio.CancelledError:
-        pass
     await engine.dispose()
 
 

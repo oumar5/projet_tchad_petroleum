@@ -10,7 +10,10 @@ from shared.auth import CurrentUser, require_permission
 
 from ..models import Equipment, Failure, Intervention
 from ..schemas import (
-    FailureCreate, FailureResponse, InterventionCreate, InterventionResponse,
+    FailureCreate,
+    FailureResponse,
+    InterventionCreate,
+    InterventionResponse,
 )
 from .deps import get_db
 

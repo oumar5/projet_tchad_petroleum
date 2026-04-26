@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..core.security import hash_password, verify_password
-from ..models import Permission, Role, User
+from ..models import Role, User
 
 
 class UserService:
@@ -31,26 +31,24 @@ class UserService:
 
     async def create(self, *, email: str, password: str, full_name: str,
                      bcrypt_rounds: int = 12, role_names: list[str] | None = None) -> User:
+        roles = await self._fetch_roles(role_names or ["viewer"])
         user = User(
             email=email,
             password_hash=hash_password(password, rounds=bcrypt_rounds),
             full_name=full_name,
+            roles=roles,
         )
         self.session.add(user)
         await self.session.flush()
-
-        if role_names:
-            await self._attach_roles(user, role_names)
-        else:
-            await self._attach_roles(user, ["viewer"])
-
-        await self.session.flush()
         return await self.get_by_id(user.id)  # type: ignore[return-value]
 
-    async def _attach_roles(self, user: User, role_names: list[str]) -> None:
-        stmt = select(Role).where(Role.name.in_(role_names))
-        roles = list((await self.session.execute(stmt)).scalars())
-        user.roles = roles
+    async def _fetch_roles(self, role_names: list[str]) -> list[Role]:
+        stmt = (
+            select(Role)
+            .options(selectinload(Role.permissions))
+            .where(Role.name.in_(role_names))
+        )
+        return list((await self.session.execute(stmt)).scalars())
 
     @staticmethod
     def collect_permissions(user: User) -> list[str]:

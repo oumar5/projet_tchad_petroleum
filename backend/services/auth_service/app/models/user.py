@@ -1,10 +1,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import (
-    BigInteger, Boolean, DateTime, ForeignKey, Index, Text, UniqueConstraint
-)
-from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID as PgUUID
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db import Base
@@ -22,7 +21,11 @@ class User(UUIDMixin, TimestampMixin, Base):
     mfa_secret: Mapped[str | None] = mapped_column(Text)
 
     roles: Mapped[list["Role"]] = relationship(
-        secondary="auth.user_roles", back_populates="users", lazy="selectin"
+        secondary="auth.user_roles",
+        primaryjoin="User.id == UserRole.user_id",
+        secondaryjoin="UserRole.role_id == Role.id",
+        back_populates="users",
+        lazy="selectin",
     )
 
 
@@ -37,7 +40,10 @@ class Role(UUIDMixin, Base):
     )
 
     users: Mapped[list[User]] = relationship(
-        secondary="auth.user_roles", back_populates="roles"
+        secondary="auth.user_roles",
+        primaryjoin="Role.id == UserRole.role_id",
+        secondaryjoin="UserRole.user_id == User.id",
+        back_populates="roles",
     )
     permissions: Mapped[list["Permission"]] = relationship(
         secondary="auth.role_permissions", back_populates="roles", lazy="selectin"

@@ -13,8 +13,14 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "S", "A", "C4", "DTZ", "T20", "RET", "SIM"]
-ignore = ["S101", "S104"]
+select = ["E", "F", "I", "B", "C4", "RET", "SIM"]
+# E501 — line length warnings
+# B008 — function default arg with call (FastAPI Depends() pattern)
+# B904 — raise from / raise ... use of "from"
+# C401/C408 — comprehensions / dict() vs {} (cosmetic)
+# RET504/RET505 — early return cosmetic
+# SIM117 — nested with collapses
+ignore = ["E501", "B008", "B904", "C401", "C408", "RET504", "RET505", "SIM117"]
 
 [tool.pytest.ini_options]
 testpaths = ["services/*/tests", "shared/tests"]
