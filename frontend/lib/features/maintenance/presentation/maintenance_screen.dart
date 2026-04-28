@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_error.dart';
 import '../../../core/formatters.dart';
+import '../../../core/offline/cache_status.dart';
 import '../../../core/providers.dart';
 import '../../../core/providers/blocks_providers.dart';
 import '../../../core/theme.dart';
@@ -14,16 +15,31 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/zone_block_picker.dart';
 import '../data/maintenance_repository.dart';
 
+const _kFailuresKey = 'maintenance.failures';
+const _kInterventionsKey = 'maintenance.interventions';
+
 final _repoProvider = Provider<MaintenanceRepository>(
   (ref) => MaintenanceRepository(ref.watch(apiClientProvider)),
 );
 
 final _failuresProvider = FutureProvider<List<Map<String, dynamic>>>(
-  (ref) => ref.watch(_repoProvider).failures(),
+  (ref) async {
+    final r = await ref.watch(_repoProvider).failuresCached();
+    ref
+        .read(cacheStatusProvider.notifier)
+        .report(_kFailuresKey, CacheStatus.fromResult(r));
+    return r.data;
+  },
 );
 
 final _interventionsProvider = FutureProvider<List<Map<String, dynamic>>>(
-  (ref) => ref.watch(_repoProvider).interventions(),
+  (ref) async {
+    final r = await ref.watch(_repoProvider).interventionsCached();
+    ref
+        .read(cacheStatusProvider.notifier)
+        .report(_kInterventionsKey, CacheStatus.fromResult(r));
+    return r.data;
+  },
 );
 
 class MaintenanceScreen extends ConsumerWidget {

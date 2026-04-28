@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/formatters.dart';
+import '../../../core/offline/cache_status.dart' show cacheStatusProvider, CacheStatus;
 import '../../../core/providers.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/error_state.dart';
@@ -11,12 +12,20 @@ import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/section_header.dart';
 import '../data/dashboard_repository.dart';
 
+const _kFeatureKey = 'dashboard.kpis';
+
 final _repoProvider = Provider<DashboardRepository>(
   (ref) => DashboardRepository(ref.watch(apiClientProvider)),
 );
 
 final _kpisProvider = FutureProvider.family<Map<String, dynamic>, String>(
-  (ref, period) => ref.watch(_repoProvider).kpis(period: period),
+  (ref, period) async {
+    final result = await ref.watch(_repoProvider).kpisCached(period: period);
+    ref
+        .read(cacheStatusProvider.notifier)
+        .report(_kFeatureKey, CacheStatus.fromResult(result));
+    return result.data;
+  },
 );
 
 const _periods = {

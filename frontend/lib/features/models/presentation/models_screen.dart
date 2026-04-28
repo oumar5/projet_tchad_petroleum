@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_error.dart';
 import '../../../core/formatters.dart';
+import '../../../core/offline/cache_status.dart';
 import '../../../core/providers.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -12,12 +13,20 @@ import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../data/models_repository.dart';
 
+const _kFeatureKey = 'ml.models';
+
 final _repoProvider = Provider<ModelsRepository>(
   (ref) => ModelsRepository(ref.watch(apiClientProvider)),
 );
 
 final _modelsProvider = FutureProvider<List<Map<String, dynamic>>>(
-  (ref) => ref.watch(_repoProvider).list(),
+  (ref) async {
+    final r = await ref.watch(_repoProvider).listCached();
+    ref
+        .read(cacheStatusProvider.notifier)
+        .report(_kFeatureKey, CacheStatus.fromResult(r));
+    return r.data;
+  },
 );
 
 String _qualifier(double v) {

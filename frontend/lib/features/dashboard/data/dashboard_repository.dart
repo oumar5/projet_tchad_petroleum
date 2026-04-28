@@ -5,19 +5,20 @@ class DashboardRepository {
   DashboardRepository(this._client);
   final ApiClient _client;
 
-  Future<Map<String, dynamic>> kpis({String period = '30d'}) async {
-    try {
-      final r = await _client.dio.get(
-        '/v1/production/kpis',
-        queryParameters: {'period': period},
-      );
-      final data = Map<String, dynamic>.from(r.data as Map);
-      await OfflineCache.instance.putJson('kpis:$period', data);
-      return data;
-    } catch (_) {
-      final cached = OfflineCache.instance.readJson('kpis:$period');
-      if (cached != null) return Map<String, dynamic>.from(cached.data as Map);
-      rethrow;
-    }
+  Future<CachedResult<Map<String, dynamic>>> kpisCached({
+    String period = '30d',
+  }) {
+    return OfflineCache.instance.cached<Map<String, dynamic>>(
+      key: 'kpis:$period',
+      fetch: () async {
+        final r = await _client.dio.get(
+          '/v1/production/kpis',
+          queryParameters: {'period': period},
+        );
+        return Map<String, dynamic>.from(r.data as Map);
+      },
+      decode: (raw) => Map<String, dynamic>.from(raw as Map),
+      encode: (m) => m,
+    );
   }
 }

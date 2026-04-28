@@ -1,4 +1,10 @@
 import '../../../core/api_client.dart';
+import '../../../core/offline/offline_cache.dart';
+
+List<Map<String, dynamic>> _decodeList(Object raw) =>
+    List<Map<String, dynamic>>.from(
+      (raw as List).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
 
 class BlocksRepository {
   BlocksRepository(this._client);
@@ -6,10 +12,15 @@ class BlocksRepository {
 
   // ----- Zones -----
 
-  Future<List<Map<String, dynamic>>> listZones() async {
-    final r = await _client.dio.get('/v1/production/zones');
-    return List<Map<String, dynamic>>.from(
-      (r.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+  Future<CachedResult<List<Map<String, dynamic>>>> listZonesCached() {
+    return OfflineCache.instance.cached<List<Map<String, dynamic>>>(
+      key: 'cfg:zones',
+      fetch: () async {
+        final r = await _client.dio.get('/v1/production/zones');
+        return _decodeList(r.data as Object);
+      },
+      decode: _decodeList,
+      encode: (items) => items,
     );
   }
 
@@ -44,13 +55,21 @@ class BlocksRepository {
 
   // ----- Blocks -----
 
-  Future<List<Map<String, dynamic>>> listBlocks({String? zoneCode}) async {
-    final r = await _client.dio.get(
-      '/v1/production/blocks',
-      queryParameters: {'zone': ?zoneCode},
-    );
-    return List<Map<String, dynamic>>.from(
-      (r.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+  Future<CachedResult<List<Map<String, dynamic>>>> listBlocksCached({
+    String? zoneCode,
+  }) {
+    final key = zoneCode == null ? 'cfg:blocks:_all' : 'cfg:blocks:$zoneCode';
+    return OfflineCache.instance.cached<List<Map<String, dynamic>>>(
+      key: key,
+      fetch: () async {
+        final r = await _client.dio.get(
+          '/v1/production/blocks',
+          queryParameters: {'zone': ?zoneCode},
+        );
+        return _decodeList(r.data as Object);
+      },
+      decode: _decodeList,
+      encode: (items) => items,
     );
   }
 
@@ -87,13 +106,21 @@ class BlocksRepository {
     await _client.dio.delete('/v1/production/blocks/$blockId');
   }
 
-  Future<List<Map<String, dynamic>>> listWells({String? blockCode}) async {
-    final r = await _client.dio.get(
-      '/v1/production/wells',
-      queryParameters: {'block': ?blockCode},
-    );
-    return List<Map<String, dynamic>>.from(
-      (r.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+  Future<CachedResult<List<Map<String, dynamic>>>> listWellsCached({
+    String? blockCode,
+  }) {
+    final key = blockCode == null ? 'cfg:wells:_all' : 'cfg:wells:$blockCode';
+    return OfflineCache.instance.cached<List<Map<String, dynamic>>>(
+      key: key,
+      fetch: () async {
+        final r = await _client.dio.get(
+          '/v1/production/wells',
+          queryParameters: {'block': ?blockCode},
+        );
+        return _decodeList(r.data as Object);
+      },
+      decode: _decodeList,
+      encode: (items) => items,
     );
   }
 

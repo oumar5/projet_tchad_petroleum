@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/offline/cache_status.dart';
+import '../../../core/providers/blocks_providers.dart';
 import '../../../core/theme.dart';
 import '../../about/presentation/about_screen.dart';
 import '../../configuration/presentation/configuration_screen.dart';
@@ -50,10 +52,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    registerSelectionPersistence(ref);
+
     final width = MediaQuery.sizeOf(context).width;
     final useRail = width >= 900;
 
-    final body = IndexedStack(index: _index, children: _screens);
+    final body = Column(children: [
+      const OfflineBanner(),
+      Expanded(child: IndexedStack(index: _index, children: _screens)),
+    ]);
 
     if (useRail) {
       return Scaffold(

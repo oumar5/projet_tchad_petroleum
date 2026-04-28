@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_error.dart';
 import '../../../core/formatters.dart';
+import '../../../core/offline/cache_status.dart';
 import '../../../core/providers.dart';
 import '../../../core/providers/blocks_providers.dart';
 import '../../../core/theme.dart';
@@ -15,6 +16,8 @@ import '../data/etl_repository.dart';
 import '../data/production_repository.dart';
 import 'production_forecast_tab.dart';
 
+const _kFeatureKey = 'production.daily';
+
 final _repoProvider = Provider<ProductionRepository>(
   (ref) => ProductionRepository(ref.watch(apiClientProvider)),
 );
@@ -24,7 +27,13 @@ final _etlRepoProvider = Provider<EtlRepository>(
 );
 
 final _dailyProvider = FutureProvider<List<Map<String, dynamic>>>(
-  (ref) => ref.watch(_repoProvider).daily(),
+  (ref) async {
+    final result = await ref.watch(_repoProvider).dailyCached();
+    ref
+        .read(cacheStatusProvider.notifier)
+        .report(_kFeatureKey, CacheStatus.fromResult(result));
+    return result.data;
+  },
 );
 
 void _showExcelImport(BuildContext context, WidgetRef ref) {

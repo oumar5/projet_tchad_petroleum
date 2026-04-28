@@ -7,13 +7,13 @@ class ProductionRepository {
   ProductionRepository(this._client);
   final ApiClient _client;
 
-  Future<List<Map<String, dynamic>>> daily({
+  Future<CachedResult<List<Map<String, dynamic>>>> dailyCached({
     String? from,
     String? to,
     String? block,
     int page = 1,
     int pageSize = 100,
-  }) async {
+  }) {
     final qp = {
       'page': '$page',
       'page_size': '$pageSize',
@@ -21,23 +21,21 @@ class ProductionRepository {
       'to': ?to,
       'block': ?block,
     };
-    try {
-      final r = await _client.dio
-          .get('/v1/production/daily', queryParameters: qp);
-      final items = List<Map<String, dynamic>>.from(
-        (r.data['items'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
-      );
-      await OfflineCache.instance.putJson('prod:daily', items);
-      return items;
-    } catch (_) {
-      final cached = OfflineCache.instance.readJson('prod:daily');
-      if (cached != null) {
+    return OfflineCache.instance.cached<List<Map<String, dynamic>>>(
+      key: 'prod:daily',
+      fetch: () async {
+        final r = await _client.dio
+            .get('/v1/production/daily', queryParameters: qp);
         return List<Map<String, dynamic>>.from(
-          (cached.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+          (r.data['items'] as List)
+              .map((e) => Map<String, dynamic>.from(e as Map)),
         );
-      }
-      rethrow;
-    }
+      },
+      decode: (raw) => List<Map<String, dynamic>>.from(
+        (raw as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+      encode: (items) => items,
+    );
   }
 
   Future<String> create({

@@ -1,19 +1,31 @@
 import '../../../core/api_client.dart';
+import '../../../core/offline/offline_cache.dart';
+
+List<Map<String, dynamic>> _decodeList(Object raw) =>
+    List<Map<String, dynamic>>.from(
+      (raw as List).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
 
 class ModelsRepository {
   ModelsRepository(this._client);
   final ApiClient _client;
 
-  Future<List<Map<String, dynamic>>> list({
+  Future<CachedResult<List<Map<String, dynamic>>>> listCached({
     String? type,
     bool? active,
-  }) async {
-    final r = await _client.dio.get(
-      '/v1/ml/models',
-      queryParameters: {'type': ?type, 'active': ?active},
-    );
-    return List<Map<String, dynamic>>.from(
-      (r.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+  }) {
+    final key = 'ml:models:${type ?? "_all"}:${active ?? "_all"}';
+    return OfflineCache.instance.cached<List<Map<String, dynamic>>>(
+      key: key,
+      fetch: () async {
+        final r = await _client.dio.get(
+          '/v1/ml/models',
+          queryParameters: {'type': ?type, 'active': ?active},
+        );
+        return _decodeList(r.data as Object);
+      },
+      decode: _decodeList,
+      encode: (items) => items,
     );
   }
 
