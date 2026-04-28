@@ -22,14 +22,32 @@ from shared.db import Base
 from shared.db.base import TimestampMixin, UUIDMixin
 
 
-class Block(UUIDMixin, Base):
-    __tablename__ = "blocks"
+class Zone(UUIDMixin, Base):
+    __tablename__ = "zones"
     __table_args__ = {"schema": "production"}
 
     code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
 
+    blocks: Mapped[list["Block"]] = relationship(back_populates="zone")
+
+
+class Block(UUIDMixin, Base):
+    __tablename__ = "blocks"
+    __table_args__ = (
+        Index("ix_blocks_zone_id", "zone_id"),
+        {"schema": "production"},
+    )
+
+    code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    zone_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("production.zones.id"), nullable=False
+    )
+
+    zone: Mapped[Zone] = relationship(back_populates="blocks")
     wells: Mapped[list["Well"]] = relationship(back_populates="block")
 
 

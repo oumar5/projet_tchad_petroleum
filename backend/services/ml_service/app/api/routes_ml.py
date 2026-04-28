@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.auth import CurrentUser, require_permission
@@ -268,14 +268,24 @@ async def activate_model(
     target = await session.get(MLModel, model_id)
     if target is None:
         raise HTTPException(404, "Model not found")
-    others = (await session.execute(
-        select(MLModel).where(
-            MLModel.model_type == target.model_type, MLModel.id != target.id,
+    # Désactiver d'abord tous les autres modèles du même type, flush pour
+    # libérer la contrainte unique partielle `one_active_per_type`, puis
+    # activer la cible. Sans le flush intermédiaire, l'auto-flush de
+    # SQLAlchemy peut tenter d'insérer le UPDATE de la cible avant celui
+    # des autres et déclencher une UniqueViolationError.
+    await session.execute(
+        update(MLModel)
+        .where(
+            MLModel.model_type == target.model_type,
+            MLModel.id != target.id,
+            MLModel.is_active.is_(True),
         )
-    )).scalars()
-    for o in others:
-        o.is_active = False
-    target.is_active = True
+        .values(is_active=False)
+    )
+    await session.flush()
+    if not target.is_active:
+        target.is_active = True
+        await session.flush()
 
 
 @router.get("/predictions/history")

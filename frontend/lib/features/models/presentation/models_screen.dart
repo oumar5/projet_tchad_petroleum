@@ -106,64 +106,52 @@ const _useCases = <_UseCase>[
   ),
 ];
 
-class ModelsScreen extends ConsumerWidget {
-  const ModelsScreen({super.key});
+/// IA pédagogique — utilisée comme onglet dans la page Configuration.
+class ModelsManagementView extends ConsumerWidget {
+  const ModelsManagementView({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final models = ref.watch(_modelsProvider);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Intelligence Artificielle'),
-        actions: [
-          IconButton(
-            tooltip: 'Actualiser',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => ref.invalidate(_modelsProvider),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(_modelsProvider),
-        child: models.when(
-          loading: () => ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: 3,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (_, _) => const Skeleton(height: 220, radius: 16),
-          ),
-          error: (e, _) => ErrorState(
-              error: e, onRetry: () => ref.invalidate(_modelsProvider)),
-          data: (rows) => ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-            children: [
-              const _IntroBanner(),
-              const SizedBox(height: 16),
-              for (final uc in _useCases) ...[
-                _UseCaseCard(
-                  useCase: uc,
-                  models: rows
-                      .where((r) =>
-                          (r['model_type']?.toString() ?? '') == uc.type)
-                      .toList(),
-                  onTrain: () => _showTrainSheet(context, ref, uc),
-                  onActivate: (id) => _activate(context, ref, id),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (rows.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: EmptyState(
-                    icon: Icons.precision_manufacturing_outlined,
-                    title: 'Aucun modèle entraîné',
-                    subtitle:
-                        'Lance le premier entraînement depuis une carte ci-dessus.',
-                  ),
-                ),
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(_modelsProvider),
+      child: models.when(
+        loading: () => ListView.separated(
+          padding: const EdgeInsets.all(20),
+          itemCount: 3,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (_, _) => const Skeleton(height: 220, radius: 16),
+        ),
+        error: (e, _) => ErrorState(
+            error: e, onRetry: () => ref.invalidate(_modelsProvider)),
+        data: (rows) => ListView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          children: [
+            const _IntroBanner(),
+            const SizedBox(height: 16),
+            for (final uc in _useCases) ...[
+              _UseCaseCard(
+                useCase: uc,
+                models: rows
+                    .where((r) =>
+                        (r['model_type']?.toString() ?? '') == uc.type)
+                    .toList(),
+                onTrain: () => _showTrainSheet(context, ref, uc),
+                onActivate: (id) => _activate(context, ref, id),
+              ),
+              const SizedBox(height: 14),
             ],
-          ),
+            if (rows.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: EmptyState(
+                  icon: Icons.precision_manufacturing_outlined,
+                  title: 'Aucun modèle entraîné',
+                  subtitle:
+                      'Lance le premier entraînement depuis une carte ci-dessus.',
+                ),
+              ),
+          ],
         ),
       ),
     );

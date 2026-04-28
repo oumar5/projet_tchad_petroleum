@@ -163,13 +163,23 @@ référencé par une ligne de production (HTTP 409).
 ```sql
 CREATE SCHEMA production;
 
+-- Hiérarchie : zones → blocs → puits
+CREATE TABLE production.zones (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code        TEXT UNIQUE NOT NULL,           -- 'TCHAD', 'NORD', 'SUD'…
+    name        TEXT NOT NULL,
+    description TEXT
+);
+
 CREATE TABLE production.blocks (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code        TEXT UNIQUE NOT NULL,           -- 'X', 'Y', 'Z'
     name        TEXT NOT NULL,
     description TEXT,
+    zone_id     UUID NOT NULL REFERENCES production.zones(id),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX ix_blocks_zone_id ON production.blocks(zone_id);
 
 CREATE TABLE production.wells (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

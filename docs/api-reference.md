@@ -200,6 +200,25 @@ Permission : `production:write`
 
 ### 3.2 Référentiels
 
+#### Zones
+
+```
+GET    /v1/production/zones                — liste                    (production:read)
+POST   /v1/production/zones                — créer                    (production:write)
+PATCH  /v1/production/zones/{zone_id}      — modifier name/desc.      (production:write)
+DELETE /v1/production/zones/{zone_id}      — supprimer (si vide)      (production:write)
+```
+
+`POST /v1/production/zones` body :
+```json
+{ "code": "NORD", "name": "Zone Nord", "description": "facultatif" }
+```
+
+- `code` est unique et **non modifiable** après création.
+- `DELETE` retourne `409` si des blocs sont rattachés à la zone.
+- Une zone par défaut **`TCHAD`** est créée automatiquement par la migration
+  `0002_add_zones` ; tous les blocs existants y sont migrés.
+
 #### Blocs
 
 ```
@@ -209,11 +228,21 @@ PATCH  /v1/production/blocks/{block_id}     — modifier name/desc.    (producti
 DELETE /v1/production/blocks/{block_id}     — supprimer (si vide)    (production:write)
 ```
 
+`GET /v1/production/blocks` accepte un filtre `?zone=CODE` pour ne retourner
+que les blocs d'une zone donnée.
+
 `POST /v1/production/blocks` body :
 ```json
-{ "code": "NORD-1", "name": "Bloc Nord 1", "description": "facultatif" }
+{
+  "code": "NORD-1",
+  "name": "Bloc Nord 1",
+  "zone_id": "01abc072-ef0a-41e9-a794-d2b85997ec5c",
+  "description": "facultatif"
+}
 ```
+
 - `code` est unique et **non modifiable** après création.
+- `zone_id` est **requis** et doit pointer sur une zone existante.
 - `DELETE` retourne `409` si des puits ou des lignes de production sont rattachés au bloc.
 
 #### Puits

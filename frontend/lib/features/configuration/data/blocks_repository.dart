@@ -4,8 +4,51 @@ class BlocksRepository {
   BlocksRepository(this._client);
   final ApiClient _client;
 
-  Future<List<Map<String, dynamic>>> listBlocks() async {
-    final r = await _client.dio.get('/v1/production/blocks');
+  // ----- Zones -----
+
+  Future<List<Map<String, dynamic>>> listZones() async {
+    final r = await _client.dio.get('/v1/production/zones');
+    return List<Map<String, dynamic>>.from(
+      (r.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+  }
+
+  Future<Map<String, dynamic>> createZone({
+    required String code,
+    required String name,
+    String? description,
+  }) async {
+    final r = await _client.dio.post('/v1/production/zones', data: {
+      'code': code,
+      'name': name,
+      'description': ?description,
+    });
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<Map<String, dynamic>> updateZone({
+    required String zoneId,
+    String? name,
+    String? description,
+  }) async {
+    final r = await _client.dio.patch('/v1/production/zones/$zoneId', data: {
+      'name': ?name,
+      'description': ?description,
+    });
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<void> deleteZone(String zoneId) async {
+    await _client.dio.delete('/v1/production/zones/$zoneId');
+  }
+
+  // ----- Blocks -----
+
+  Future<List<Map<String, dynamic>>> listBlocks({String? zoneCode}) async {
+    final r = await _client.dio.get(
+      '/v1/production/blocks',
+      queryParameters: {'zone': ?zoneCode},
+    );
     return List<Map<String, dynamic>>.from(
       (r.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
     );
@@ -14,11 +57,13 @@ class BlocksRepository {
   Future<Map<String, dynamic>> createBlock({
     required String code,
     required String name,
+    required String zoneId,
     String? description,
   }) async {
     final r = await _client.dio.post('/v1/production/blocks', data: {
       'code': code,
       'name': name,
+      'zone_id': zoneId,
       'description': ?description,
     });
     return Map<String, dynamic>.from(r.data as Map);
@@ -28,10 +73,12 @@ class BlocksRepository {
     required String blockId,
     String? name,
     String? description,
+    String? zoneId,
   }) async {
     final r = await _client.dio.patch('/v1/production/blocks/$blockId', data: {
       'name': ?name,
       'description': ?description,
+      'zone_id': ?zoneId,
     });
     return Map<String, dynamic>.from(r.data as Map);
   }

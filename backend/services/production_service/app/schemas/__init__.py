@@ -4,22 +4,43 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class BlockResponse(BaseModel):
+class ZoneResponse(BaseModel):
     id: UUID
     code: str
     name: str
     description: str | None
 
 
-class BlockCreate(BaseModel):
+class ZoneCreate(BaseModel):
     code: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=200)
     description: str | None = None
 
 
+class ZoneUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+
+
+class BlockResponse(BaseModel):
+    id: UUID
+    code: str
+    name: str
+    description: str | None
+    zone_id: UUID
+
+
+class BlockCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    zone_id: UUID
+
+
 class BlockUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
+    zone_id: UUID | None = None
 
 
 class WellResponse(BaseModel):

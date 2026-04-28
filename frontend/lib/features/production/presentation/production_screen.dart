@@ -1,42 +1,93 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api_error.dart';
 import '../../../core/formatters.dart';
 import '../../../core/providers.dart';
+import '../../../core/providers/blocks_providers.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_skeleton.dart';
+import '../../../core/widgets/zone_block_picker.dart';
+import '../data/etl_repository.dart';
 import '../data/production_repository.dart';
+import 'production_forecast_tab.dart';
 
 final _repoProvider = Provider<ProductionRepository>(
   (ref) => ProductionRepository(ref.watch(apiClientProvider)),
+);
+
+final _etlRepoProvider = Provider<EtlRepository>(
+  (ref) => EtlRepository(ref.watch(apiClientProvider)),
 );
 
 final _dailyProvider = FutureProvider<List<Map<String, dynamic>>>(
   (ref) => ref.watch(_repoProvider).daily(),
 );
 
+void _showExcelImport(BuildContext context, WidgetRef ref) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const _ExcelImportDialog(),
+  );
+}
+
 class ProductionScreen extends ConsumerWidget {
   const ProductionScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Production'),
+          bottom: const TabBar(
+            indicatorWeight: 3,
+            labelStyle: TextStyle(fontWeight: FontWeight.w700),
+            tabs: [
+              Tab(icon: Icon(Icons.list_alt_rounded), text: 'Données'),
+              Tab(icon: Icon(Icons.timeline_rounded), text: 'Prévision IA'),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Importer un fichier Excel',
+              icon: const Icon(Icons.upload_file_rounded),
+              onPressed: () => _showExcelImport(context, ref),
+            ),
+            IconButton(
+              tooltip: 'Actualiser',
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: () => ref.invalidate(_dailyProvider),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: const TabBarView(
+          children: [_DailyDataTab(), ProductionForecastTab()],
+        ),
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Tab 1 — Données journalières
+// ----------------------------------------------------------------------------
+
+class _DailyDataTab extends ConsumerWidget {
+  const _DailyDataTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final daily = ref.watch(_dailyProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Production'),
-        actions: [
-          IconButton(
-            tooltip: 'Actualiser',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => ref.invalidate(_dailyProvider),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab-daily',
         onPressed: () => _showCreateDialog(context, ref),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Nouvelle saisie'),
@@ -73,7 +124,6 @@ class ProductionScreen extends ConsumerWidget {
   void _showCreateDialog(BuildContext context, WidgetRef ref) {
     final dateCtrl = TextEditingController(
         text: DateTime.now().toIso8601String().substring(0, 10));
-    final blockCtrl = TextEditingController(text: 'X');
     final oilCtrl = TextEditingController();
     final waterCtrl = TextEditingController();
     final wcCtrl = TextEditingController();
@@ -85,13 +135,14 @@ class ProductionScreen extends ConsumerWidget {
       builder: (_) => AlertDialog(
         title: const Text('Nouvelle saisie quotidienne'),
         content: SizedBox(
-          width: 380,
+          width: 420,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _Field(controller: dateCtrl, label: 'Date (YYYY-MM-DD)'),
-                _Field(controller: blockCtrl, label: 'Bloc'),
+                const ZoneBlockPicker(),
+                const SizedBox(height: 12),
                 _Field(controller: wtCtrl, label: 'Puits totaux', number: true),
                 _Field(controller: waCtrl, label: 'Puits actifs', number: true),
                 _Field(controller: oilCtrl, label: 'Huile (bbl)', number: true),
@@ -109,9 +160,10 @@ class ProductionScreen extends ConsumerWidget {
           FilledButton(
             onPressed: () async {
               try {
+                final blockCode = ref.read(selectedBlockProvider);
                 await ref.read(_repoProvider).create(
                       date: dateCtrl.text,
-                      blockCode: blockCtrl.text,
+                      blockCode: blockCode,
                       wellsTotal: int.parse(wtCtrl.text),
                       wellsActive: int.parse(waCtrl.text),
                       oilBbl: double.parse(oilCtrl.text),
@@ -283,6 +335,190 @@ class _MiniStat extends StatelessWidget {
             color: c,
             fontWeight: FontWeight.w600,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Excel ingestion dialog
+// ----------------------------------------------------------------------------
+
+class _ExcelImportDialog extends ConsumerStatefulWidget {
+  const _ExcelImportDialog();
+
+  @override
+  ConsumerState<_ExcelImportDialog> createState() => _ExcelImportDialogState();
+}
+
+class _ExcelImportDialogState extends ConsumerState<_ExcelImportDialog> {
+  PlatformFile? _file;
+  bool _uploading = false;
+  Map<String, dynamic>? _result;
+  String? _error;
+
+  Future<void> _pickFile() async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['xlsx', 'xls'],
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return;
+    setState(() {
+      _file = res.files.first;
+      _error = null;
+      _result = null;
+    });
+  }
+
+  Future<void> _upload() async {
+    if (_file == null || _file!.bytes == null) return;
+    setState(() {
+      _uploading = true;
+      _error = null;
+    });
+    try {
+      final r = await ref.read(_etlRepoProvider).ingestExcel(
+            filename: _file!.name,
+            bytes: _file!.bytes!,
+            label:
+                'ui-${DateTime.now().toIso8601String().replaceAll(":", "").substring(0, 17)}',
+          );
+      setState(() => _result = r);
+      ref.invalidate(_dailyProvider);
+    } catch (e) {
+      setState(() => _error = prettyError(e));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bytes = _file?.bytes;
+    return AlertDialog(
+      title: const Text('Importer un fichier Excel'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(AppRadii.md),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Le fichier doit contenir une feuille « Prod YOM '
+                      'BlocsFaillés X, Y et Z » avec les colonnes Date, '
+                      'Production huile/eau, Watercut, Puits totaux et actifs.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _uploading ? null : _pickFile,
+              icon: const Icon(Icons.attach_file_rounded),
+              label: Text(_file == null
+                  ? 'Choisir un fichier .xlsx'
+                  : '${_file!.name}'
+                      ' (${((bytes?.length ?? 0) / 1024).toStringAsFixed(0)} ko)'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 18, color: scheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: scheme.onErrorContainer),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (_result != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.goodGreen.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                  border:
+                      Border.all(color: AppColors.goodGreen.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded,
+                            color: AppColors.goodGreen, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Ingestion terminée',
+                          style: TextStyle(
+                            color: AppColors.goodGreen,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${_result!["rows_processed"] ?? 0} lignes ajoutées · '
+                      '${_result!["rows_skipped"] ?? 0} ignorées · '
+                      '${_result!["rows_failed"] ?? 0} en erreur',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _uploading ? null : () => Navigator.pop(context),
+          child: Text(_result != null ? 'Fermer' : 'Annuler'),
+        ),
+        FilledButton.icon(
+          onPressed: (_file == null || _uploading || _result != null)
+              ? null
+              : _upload,
+          icon: _uploading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.cloud_upload_rounded),
+          label: Text(_uploading ? 'Envoi en cours…' : 'Importer'),
         ),
       ],
     );

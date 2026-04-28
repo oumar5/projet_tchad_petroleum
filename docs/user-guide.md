@@ -13,19 +13,38 @@ Ce guide détaille l'utilisation complète de SmartBarrel, la plateforme de mod�
 
 ## 🆕 Nouveautés v3 — gestion des blocs/puits et IA
 
-### Configuration (Blocs & Puits)
+### Configuration (Zones, Blocs, Puits, Modèles IA)
 
-L'écran **Configuration** dans la barre latérale permet de gérer les blocs et
-les puits sans passer par la base de données.
+L'écran **Configuration** est désormais structuré en **4 onglets** et
+remplace les anciennes entrées « IA » et « Configuration » (séparées) du
+menu latéral :
 
-- **Onglet Blocs** : Créer / renommer / supprimer un bloc. Le code (`X`, `Y`,
-  `NORD-1`…) est défini à la création et reste immuable. Un bloc référencé par
-  des données de production ne peut pas être supprimé.
-- **Onglet Puits** : Ajouter un puits sous un bloc parent (sélection par
-  drop-down). Le type de pompe est libre (`ESP`, `Beam`, `Rod`…). Le toggle
-  "Puits actif" désactive sans supprimer.
+- **Onglet Zones** *(nouveau)* : créer / renommer / supprimer une zone
+  géographique (ex. `TCHAD`, `NORD`, `SUD`). Le code est immuable. Une zone
+  contenant des blocs ne peut pas être supprimée.
+- **Onglet Blocs** : un bloc appartient désormais à une **zone parente**
+  (sélection par drop-down dans le formulaire). Code immuable, suppression
+  protégée si données rattachées.
+- **Onglet Puits** : ajouter un puits sous un bloc parent. Type de pompe
+  libre (`ESP`, `Beam`, `Rod`…). Toggle "Puits actif" pour désactiver sans
+  supprimer.
+- **Onglet Modèles IA** : gestion des modèles entraînés (présentation
+  pédagogique par cas d'usage métier, métriques en clair).
 
-Permission requise : `production:write` (rôles **engineer** et **admin**).
+Permission requise pour les modifications : `production:write` (rôles
+**engineer** et **admin**). Les sélecteurs sur les écrans Maintenance,
+Injection et le dialogue de saisie Production utilisent un **picker
+cascadé Zone → Bloc** qui se met à jour automatiquement quand la zone
+change.
+
+### Import Excel rapide
+
+Sur l'écran **Production**, le bouton **« Importer un fichier Excel »**
+(icône upload dans l'AppBar) ouvre un dialogue qui pousse un classeur
+`.xlsx` vers `POST /v1/etl/ingest/excel`. Le classeur doit contenir la
+feuille `Prod YOM BlocsFaillés X, Y et Z`. Le dialogue affiche en temps
+réel le nombre de lignes ajoutées / ignorées / en erreur, puis recharge
+automatiquement la liste de production.
 
 ### Intelligence Artificielle (3 modèles)
 

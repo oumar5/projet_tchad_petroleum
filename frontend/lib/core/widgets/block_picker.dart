@@ -11,7 +11,7 @@ class BlockPicker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final blocks = ref.watch(blocksProvider);
+    final blocks = ref.watch(blocksProvider(null));
     final selected = ref.watch(selectedBlockProvider);
 
     return blocks.when(

@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api_error.dart';
 import '../../../core/formatters.dart';
 import '../../../core/providers.dart';
+import '../../../core/providers/blocks_providers.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/kpi_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/zone_block_picker.dart';
 import '../data/maintenance_repository.dart';
 
 final _repoProvider = Provider<MaintenanceRepository>(
@@ -72,7 +74,6 @@ class _RiskTab extends ConsumerStatefulWidget {
 }
 
 class _RiskTabState extends ConsumerState<_RiskTab> {
-  final _blockCtrl = TextEditingController(text: 'X');
   int _horizon = 7;
   Map<String, dynamic>? _result;
   bool _loading = false;
@@ -84,20 +85,15 @@ class _RiskTabState extends ConsumerState<_RiskTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _run());
   }
 
-  @override
-  void dispose() {
-    _blockCtrl.dispose();
-    super.dispose();
-  }
-
   Future<void> _run() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
+      final block = ref.read(selectedBlockProvider);
       final r = await ref.read(_repoProvider).predictRisk(
-            block: _blockCtrl.text.trim().isEmpty ? 'X' : _blockCtrl.text.trim(),
+            block: block,
             horizonDays: _horizon,
           );
       setState(() => _result = r);
@@ -127,17 +123,12 @@ class _RiskTabState extends ConsumerState<_RiskTab> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                const ZoneBlockPicker(),
+                const SizedBox(height: 12),
                 LayoutBuilder(
                   builder: (ctx, c) {
                     final stack = c.maxWidth < 480;
-                    final left = TextField(
-                      controller: _blockCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Bloc',
-                        prefixIcon: Icon(Icons.layers_rounded),
-                      ),
-                    );
-                    final right = DropdownButtonFormField<int>(
+                    final left = DropdownButtonFormField<int>(
                       initialValue: _horizon,
                       decoration: const InputDecoration(
                         labelText: 'Horizon (jours)',
@@ -149,6 +140,7 @@ class _RiskTabState extends ConsumerState<_RiskTab> {
                           .toList(),
                       onChanged: (v) => setState(() => _horizon = v ?? 7),
                     );
+                    final right = const SizedBox.shrink();
                     if (stack) {
                       return Column(children: [
                         left,

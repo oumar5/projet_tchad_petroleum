@@ -8,6 +8,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../models/presentation/models_screen.dart';
 
 class ConfigurationScreen extends ConsumerWidget {
   const ConfigurationScreen({super.key});
@@ -15,21 +16,351 @@ class ConfigurationScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 2,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Configuration'),
           bottom: const TabBar(
             indicatorWeight: 3,
+            isScrollable: true,
             labelStyle: TextStyle(fontWeight: FontWeight.w700),
             tabs: [
+              Tab(icon: Icon(Icons.public_rounded), text: 'Zones'),
               Tab(icon: Icon(Icons.layers_rounded), text: 'Blocs'),
               Tab(icon: Icon(Icons.opacity_rounded), text: 'Puits'),
+              Tab(
+                icon: Icon(Icons.auto_awesome_rounded),
+                text: 'Modèles IA',
+              ),
             ],
           ),
         ),
-        body: const TabBarView(children: [_BlocksTab(), _WellsTab()]),
+        body: const TabBarView(children: [
+          _ZonesTab(),
+          _BlocksTab(),
+          _WellsTab(),
+          ModelsManagementView(),
+        ]),
       ),
+    );
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Tab Zones
+// ----------------------------------------------------------------------------
+
+class _ZonesTab extends ConsumerWidget {
+  const _ZonesTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final zones = ref.watch(zonesProvider);
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab-zone',
+        onPressed: () => _showZoneDialog(context, ref),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Nouvelle zone'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async => ref.invalidate(zonesProvider),
+        child: zones.when(
+          loading: () => ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 3,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, _) => const Skeleton(height: 80, radius: 12),
+          ),
+          error: (e, _) =>
+              ErrorState(error: e, onRetry: () => ref.invalidate(zonesProvider)),
+          data: (rows) {
+            if (rows.isEmpty) {
+              return EmptyState(
+                icon: Icons.public_off_rounded,
+                title: 'Aucune zone définie',
+                subtitle:
+                    'Crée la première zone géographique de production.',
+                action: FilledButton.icon(
+                  onPressed: () => _showZoneDialog(context, ref),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Ajouter une zone'),
+                ),
+              );
+            }
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+              children: [
+                const SectionHeader(
+                  title: 'Zones',
+                  subtitle:
+                      'Une zone regroupe plusieurs blocs (ex. NORD, SUD).',
+                ),
+                for (final z in rows)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _ZoneCard(
+                      row: z,
+                      onEdit: () =>
+                          _showZoneDialog(context, ref, existing: z),
+                      onDelete: () => _confirmDeleteZone(context, ref, z),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showZoneDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    Map<String, dynamic>? existing,
+  }) {
+    showDialog(
+      context: context,
+      builder: (_) => _ZoneFormDialog(existing: existing),
+    );
+  }
+
+  Future<void> _confirmDeleteZone(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> zone,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer cette zone ?'),
+        content: Text(
+          'La zone ${zone['code']} sera retirée. '
+          'Si des blocs y sont rattachés, la suppression sera refusée.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.dangerRed,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref
+          .read(blocksRepositoryProvider)
+          .deleteZone(zone['id'].toString());
+      ref.invalidate(zonesProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Zone supprimée')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(prettyError(e))),
+      );
+    }
+  }
+}
+
+class _ZoneCard extends StatelessWidget {
+  const _ZoneCard({
+    required this.row,
+    required this.onEdit,
+    required this.onDelete,
+  });
+  final Map<String, dynamic> row;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.tealAccent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.public_rounded,
+                  color: AppColors.tealAccent),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${row['code']} — ${row['name']}',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (row['description'] != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      row['description'].toString(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Modifier',
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              onPressed: onEdit,
+            ),
+            IconButton(
+              tooltip: 'Supprimer',
+              icon: Icon(Icons.delete_outline_rounded,
+                  size: 20, color: AppColors.dangerRed),
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoneFormDialog extends ConsumerStatefulWidget {
+  const _ZoneFormDialog({this.existing});
+  final Map<String, dynamic>? existing;
+
+  @override
+  ConsumerState<_ZoneFormDialog> createState() => _ZoneFormDialogState();
+}
+
+class _ZoneFormDialogState extends ConsumerState<_ZoneFormDialog> {
+  late final TextEditingController _code = TextEditingController(
+    text: widget.existing?['code']?.toString() ?? '',
+  );
+  late final TextEditingController _name = TextEditingController(
+    text: widget.existing?['name']?.toString() ?? '',
+  );
+  late final TextEditingController _desc = TextEditingController(
+    text: widget.existing?['description']?.toString() ?? '',
+  );
+  bool _saving = false;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    _name.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() => _saving = true);
+    try {
+      final repo = ref.read(blocksRepositoryProvider);
+      if (_isEdit) {
+        await repo.updateZone(
+          zoneId: widget.existing!['id'].toString(),
+          name: _name.text.trim(),
+          description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+        );
+      } else {
+        await repo.createZone(
+          code: _code.text.trim(),
+          name: _name.text.trim(),
+          description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+        );
+      }
+      ref.invalidate(zonesProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_isEdit ? 'Zone mise à jour' : 'Zone créée')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(prettyError(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_isEdit ? 'Modifier la zone' : 'Nouvelle zone'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _code,
+              enabled: !_isEdit,
+              decoration: const InputDecoration(
+                labelText: 'Code (ex. NORD, SUD, EST)',
+                helperText: 'Identifiant court — non modifiable',
+              ),
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'Nom complet'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _desc,
+              decoration: const InputDecoration(
+                labelText: 'Description (optionnel)',
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(_isEdit ? 'Enregistrer' : 'Créer'),
+        ),
+      ],
     );
   }
 }
@@ -43,7 +374,7 @@ class _BlocksTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final blocks = ref.watch(blocksProvider);
+    final blocks = ref.watch(blocksProvider(null));
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'fab-block',
@@ -52,7 +383,7 @@ class _BlocksTab extends ConsumerWidget {
         label: const Text('Nouveau bloc'),
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(blocksProvider),
+        onRefresh: () async => ref.invalidate(blocksProvider(null)),
         child: blocks.when(
           loading: () => ListView.separated(
             padding: const EdgeInsets.all(16),
@@ -61,7 +392,7 @@ class _BlocksTab extends ConsumerWidget {
             itemBuilder: (_, _) => const Skeleton(height: 80, radius: 12),
           ),
           error: (e, _) =>
-              ErrorState(error: e, onRetry: () => ref.invalidate(blocksProvider)),
+              ErrorState(error: e, onRetry: () => ref.invalidate(blocksProvider(null))),
           data: (rows) {
             if (rows.isEmpty) {
               return EmptyState(
@@ -136,7 +467,7 @@ class _BlocksTab extends ConsumerWidget {
       await ref
           .read(blocksRepositoryProvider)
           .deleteBlock(block['id'].toString());
-      ref.invalidate(blocksProvider);
+      ref.invalidate(blocksProvider(null));
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bloc supprimé')),
@@ -246,9 +577,16 @@ class _BlockFormDialogState extends ConsumerState<_BlockFormDialog> {
   late final TextEditingController _desc = TextEditingController(
     text: widget.existing?['description']?.toString() ?? '',
   );
+  String? _zoneId;
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _zoneId = widget.existing?['zone_id']?.toString();
+  }
 
   @override
   void dispose() {
@@ -259,6 +597,12 @@ class _BlockFormDialogState extends ConsumerState<_BlockFormDialog> {
   }
 
   Future<void> _submit() async {
+    if (_zoneId == null || _zoneId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sélectionne une zone parente.')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       final repo = ref.read(blocksRepositoryProvider);
@@ -267,15 +611,17 @@ class _BlockFormDialogState extends ConsumerState<_BlockFormDialog> {
           blockId: widget.existing!['id'].toString(),
           name: _name.text.trim(),
           description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+          zoneId: _zoneId,
         );
       } else {
         await repo.createBlock(
           code: _code.text.trim(),
           name: _name.text.trim(),
+          zoneId: _zoneId!,
           description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         );
       }
-      ref.invalidate(blocksProvider);
+      ref.invalidate(blocksProvider(null));
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -294,6 +640,7 @@ class _BlockFormDialogState extends ConsumerState<_BlockFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final zones = ref.watch(zonesProvider);
     return AlertDialog(
       title: Text(_isEdit ? 'Modifier le bloc' : 'Nouveau bloc'),
       content: SizedBox(
@@ -309,6 +656,44 @@ class _BlockFormDialogState extends ConsumerState<_BlockFormDialog> {
                 helperText: 'Identifiant court — non modifiable',
               ),
               textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 12),
+            zones.when(
+              loading: () => const LinearProgressIndicator(minHeight: 2),
+              error: (_, _) => const Text(
+                'Impossible de charger les zones.',
+                style: TextStyle(color: AppColors.dangerRed),
+              ),
+              data: (rows) {
+                if (rows.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: Text(
+                      'Crée d\'abord une zone dans l\'onglet « Zones ».',
+                      style: TextStyle(color: AppColors.warnOrange),
+                    ),
+                  );
+                }
+                final values = rows.map((z) => z['id'].toString()).toList();
+                final value =
+                    values.contains(_zoneId) ? _zoneId : values.first;
+                if (value != _zoneId) _zoneId = value;
+                return DropdownButtonFormField<String>(
+                  initialValue: value,
+                  decoration: const InputDecoration(
+                    labelText: 'Zone parente',
+                    prefixIcon: Icon(Icons.public_rounded),
+                  ),
+                  items: [
+                    for (final z in rows)
+                      DropdownMenuItem(
+                        value: z['id'].toString(),
+                        child: Text('${z['code']} — ${z['name']}'),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _zoneId = v),
+                );
+              },
             ),
             const SizedBox(height: 12),
             TextField(
@@ -359,7 +744,7 @@ class _WellsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final wells = ref.watch(wellsProvider(null));
-    final blocks = ref.watch(blocksProvider);
+    final blocks = ref.watch(blocksProvider(null));
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'fab-well',

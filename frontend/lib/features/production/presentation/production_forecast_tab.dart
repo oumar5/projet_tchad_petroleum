@@ -9,25 +9,31 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/kpi_card.dart';
 import '../../../core/widgets/section_header.dart';
-import '../data/forecast_repository.dart';
+import '../../forecast/data/forecast_repository.dart';
 
 final _repoProvider = Provider<ForecastRepository>(
   (ref) => ForecastRepository(ref.watch(apiClientProvider)),
 );
 
-class ForecastScreen extends ConsumerStatefulWidget {
-  const ForecastScreen({super.key});
+class ProductionForecastTab extends ConsumerStatefulWidget {
+  const ProductionForecastTab({super.key});
 
   @override
-  ConsumerState<ForecastScreen> createState() => _ForecastScreenState();
+  ConsumerState<ProductionForecastTab> createState() =>
+      _ProductionForecastTabState();
 }
 
-class _ForecastScreenState extends ConsumerState<ForecastScreen> {
+class _ProductionForecastTabState
+    extends ConsumerState<ProductionForecastTab>
+    with AutomaticKeepAliveClientMixin {
   int _horizon = 30;
   String _algo = 'gradient_boosting';
   Map<String, dynamic>? _result;
   bool _loading = false;
   String? _error;
+
+  @override
+  bool get wantKeepAlive => true;
 
   Future<void> _run() async {
     setState(() {
@@ -48,125 +54,123 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Prévision de production')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Paramètres du modèle',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Paramètres du modèle',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (ctx, c) {
-                      final stack = c.maxWidth < 480;
-                      final left = DropdownButtonFormField<int>(
-                        initialValue: _horizon,
-                        decoration: const InputDecoration(
-                          labelText: 'Horizon de prévision',
-                          prefixIcon: Icon(Icons.event_repeat_rounded),
-                        ),
-                        items: [7, 14, 30, 60, 90]
-                            .map((d) => DropdownMenuItem(
-                                value: d, child: Text('$d jours')))
-                            .toList(),
-                        onChanged: (v) => setState(() => _horizon = v ?? 30),
-                      );
-                      final right = DropdownButtonFormField<String>(
-                        initialValue: _algo,
-                        decoration: const InputDecoration(
-                          labelText: 'Algorithme',
-                          prefixIcon: Icon(Icons.psychology_alt_rounded),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'gradient_boosting',
-                              child: Text('Gradient Boosting')),
-                          DropdownMenuItem(
-                              value: 'random_forest',
-                              child: Text('Random Forest')),
-                          DropdownMenuItem(
-                              value: 'xgboost', child: Text('XGBoost')),
-                        ],
-                        onChanged: (v) =>
-                            setState(() => _algo = v ?? 'gradient_boosting'),
-                      );
-                      if (stack) {
-                        return Column(children: [
-                          left,
-                          const SizedBox(height: 12),
-                          right,
-                        ]);
-                      }
-                      return Row(children: [
-                        Expanded(child: left),
-                        const SizedBox(width: 12),
-                        Expanded(child: right),
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (ctx, c) {
+                    final stack = c.maxWidth < 480;
+                    final left = DropdownButtonFormField<int>(
+                      initialValue: _horizon,
+                      decoration: const InputDecoration(
+                        labelText: 'Horizon de prévision',
+                        prefixIcon: Icon(Icons.event_repeat_rounded),
+                      ),
+                      items: [7, 14, 30, 60, 90]
+                          .map((d) => DropdownMenuItem(
+                              value: d, child: Text('$d jours')))
+                          .toList(),
+                      onChanged: (v) => setState(() => _horizon = v ?? 30),
+                    );
+                    final right = DropdownButtonFormField<String>(
+                      initialValue: _algo,
+                      decoration: const InputDecoration(
+                        labelText: 'Algorithme',
+                        prefixIcon: Icon(Icons.psychology_alt_rounded),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'gradient_boosting',
+                            child: Text('Gradient Boosting')),
+                        DropdownMenuItem(
+                            value: 'random_forest',
+                            child: Text('Random Forest')),
+                        DropdownMenuItem(
+                            value: 'xgboost', child: Text('XGBoost')),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _algo = v ?? 'gradient_boosting'),
+                    );
+                    if (stack) {
+                      return Column(children: [
+                        left,
+                        const SizedBox(height: 12),
+                        right,
                       ]);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _loading ? null : _run,
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.online_prediction_rounded),
-                    label: Text(_loading
-                        ? 'Calcul en cours…'
-                        : 'Lancer la prévision'),
+                    }
+                    return Row(children: [
+                      Expanded(child: left),
+                      const SizedBox(width: 12),
+                      Expanded(child: right),
+                    ]);
+                  },
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _loading ? null : _run,
+                  icon: _loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.online_prediction_rounded),
+                  label: Text(_loading
+                      ? 'Calcul en cours…'
+                      : 'Lancer la prévision'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 16),
+          Card(
+            color: scheme.errorContainer.withValues(alpha: 0.6),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline, color: scheme.error),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: scheme.onErrorContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          if (_error != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              color: scheme.errorContainer.withValues(alpha: 0.6),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Icon(Icons.error_outline, color: scheme.error),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: scheme.onErrorContainer,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 20),
-          if (_result == null && _error == null && !_loading)
-            const _ForecastEmpty()
-          else if (_result != null)
-            _ForecastResult(result: _result!),
         ],
-      ),
+        const SizedBox(height: 20),
+        if (_result == null && _error == null && !_loading)
+          const _ForecastEmpty()
+        else if (_result != null)
+          _ForecastResult(result: _result!),
+      ],
     );
   }
 }
@@ -416,7 +420,6 @@ class _ForecastChart extends StatelessWidget {
           ),
         ),
         lineBarsData: [
-          // Upper bound (invisible, just establishes shaded area)
           LineChartBarData(
             spots: upper,
             isCurved: true,
@@ -430,7 +433,6 @@ class _ForecastChart extends StatelessWidget {
               applyCutOffY: true,
             ),
           ),
-          // Lower bound (cuts the area)
           LineChartBarData(
             spots: lower,
             isCurved: true,
@@ -444,7 +446,6 @@ class _ForecastChart extends StatelessWidget {
               applyCutOffY: true,
             ),
           ),
-          // Predicted line
           LineChartBarData(
             spots: preds,
             isCurved: true,

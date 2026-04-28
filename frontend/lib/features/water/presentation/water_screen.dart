@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api_error.dart';
 import '../../../core/formatters.dart';
 import '../../../core/providers.dart';
+import '../../../core/providers/blocks_providers.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/kpi_card.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/zone_block_picker.dart';
 import '../data/water_repository.dart';
 
 final _repoProvider = Provider<WaterRepository>(
@@ -22,7 +24,6 @@ class WaterScreen extends ConsumerStatefulWidget {
 }
 
 class _WaterScreenState extends ConsumerState<WaterScreen> {
-  final _blockCtrl = TextEditingController(text: 'X');
   final _targetCtrl = TextEditingController();
   Map<String, dynamic>? _result;
   bool _loading = false;
@@ -30,7 +31,6 @@ class _WaterScreenState extends ConsumerState<WaterScreen> {
 
   @override
   void dispose() {
-    _blockCtrl.dispose();
     _targetCtrl.dispose();
     super.dispose();
   }
@@ -41,8 +41,9 @@ class _WaterScreenState extends ConsumerState<WaterScreen> {
       _error = null;
     });
     try {
+      final block = ref.read(selectedBlockProvider);
       final r = await ref.read(_repoProvider).recommend(
-            block: _blockCtrl.text,
+            block: block,
             targetOilBbl: _targetCtrl.text.isEmpty
                 ? null
                 : double.tryParse(_targetCtrl.text),
@@ -76,13 +77,7 @@ class _WaterScreenState extends ConsumerState<WaterScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: _blockCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Bloc',
-                      prefixIcon: Icon(Icons.layers_rounded),
-                    ),
-                  ),
+                  const ZoneBlockPicker(),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _targetCtrl,

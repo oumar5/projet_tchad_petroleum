@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.auth import CurrentUser, require_permission
 
 from ..core.cache import KpiCache
-from ..models import Block, DailyProduction, Well
+from ..models import Block, DailyProduction, Well, Zone
 from ..schemas import (
     BlockCreate,
     BlockResponse,
@@ -23,20 +23,101 @@ from ..schemas import (
     WellCreate,
     WellResponse,
     WellUpdate,
+    ZoneCreate,
+    ZoneResponse,
+    ZoneUpdate,
 )
 from .deps import get_db
 
 router = APIRouter(prefix="/v1/production", tags=["production"])
 
 
+@router.get("/zones", response_model=list[ZoneResponse])
+async def list_zones(
+    _: Annotated[CurrentUser, Depends(require_permission("production:read"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> list[ZoneResponse]:
+    rows = list((await session.execute(select(Zone).order_by(Zone.code))).scalars())
+    return [
+        ZoneResponse(id=z.id, code=z.code, name=z.name, description=z.description)
+        for z in rows
+    ]
+
+
+@router.post("/zones", response_model=ZoneResponse, status_code=201)
+async def create_zone(
+    body: ZoneCreate,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> ZoneResponse:
+    existing = (await session.execute(
+        select(Zone).where(Zone.code == body.code)
+    )).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(409, f"La zone '{body.code}' existe déjà.")
+    zone = Zone(code=body.code, name=body.name, description=body.description)
+    session.add(zone)
+    await session.flush()
+    return ZoneResponse(id=zone.id, code=zone.code, name=zone.name,
+                        description=zone.description)
+
+
+@router.patch("/zones/{zone_id}", response_model=ZoneResponse)
+async def update_zone(
+    zone_id: UUID,
+    body: ZoneUpdate,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> ZoneResponse:
+    zone = await session.get(Zone, zone_id)
+    if zone is None:
+        raise HTTPException(404, "Zone introuvable.")
+    if body.name is not None:
+        zone.name = body.name
+    if body.description is not None:
+        zone.description = body.description
+    await session.flush()
+    return ZoneResponse(id=zone.id, code=zone.code, name=zone.name,
+                        description=zone.description)
+
+
+@router.delete("/zones/{zone_id}", status_code=204)
+async def delete_zone(
+    zone_id: UUID,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    zone = await session.get(Zone, zone_id)
+    if zone is None:
+        raise HTTPException(404, "Zone introuvable.")
+    has_blocks = (await session.execute(
+        select(func.count()).select_from(Block).where(Block.zone_id == zone_id)
+    )).scalar_one()
+    if has_blocks > 0:
+        raise HTTPException(
+            409,
+            f"Impossible de supprimer : {has_blocks} bloc(s) sont rattachés à cette zone.",
+        )
+    await session.delete(zone)
+
+
 @router.get("/blocks", response_model=list[BlockResponse])
 async def list_blocks(
     _: Annotated[CurrentUser, Depends(require_permission("production:read"))],
     session: Annotated[AsyncSession, Depends(get_db)],
+    zone: str | None = None,
 ) -> list[BlockResponse]:
-    rows = list((await session.execute(select(Block).order_by(Block.code))).scalars())
-    return [BlockResponse(id=b.id, code=b.code, name=b.name, description=b.description)
-            for b in rows]
+    stmt = select(Block).order_by(Block.code)
+    if zone is not None:
+        stmt = stmt.join(Zone).where(Zone.code == zone)
+    rows = list((await session.execute(stmt)).scalars())
+    return [
+        BlockResponse(
+            id=b.id, code=b.code, name=b.name,
+            description=b.description, zone_id=b.zone_id,
+        )
+        for b in rows
+    ]
 
 
 @router.post("/blocks", response_model=BlockResponse, status_code=201)
@@ -45,16 +126,24 @@ async def create_block(
     _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> BlockResponse:
+    zone = await session.get(Zone, body.zone_id)
+    if zone is None:
+        raise HTTPException(404, "Zone parente introuvable.")
     existing = (await session.execute(
         select(Block).where(Block.code == body.code)
     )).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(409, f"Le bloc '{body.code}' existe déjà.")
-    block = Block(code=body.code, name=body.name, description=body.description)
+    block = Block(
+        code=body.code, name=body.name,
+        description=body.description, zone_id=body.zone_id,
+    )
     session.add(block)
     await session.flush()
-    return BlockResponse(id=block.id, code=block.code, name=block.name,
-                         description=block.description)
+    return BlockResponse(
+        id=block.id, code=block.code, name=block.name,
+        description=block.description, zone_id=block.zone_id,
+    )
 
 
 @router.patch("/blocks/{block_id}", response_model=BlockResponse)
@@ -71,9 +160,16 @@ async def update_block(
         block.name = body.name
     if body.description is not None:
         block.description = body.description
+    if body.zone_id is not None:
+        zone = await session.get(Zone, body.zone_id)
+        if zone is None:
+            raise HTTPException(404, "Zone parente introuvable.")
+        block.zone_id = body.zone_id
     await session.flush()
-    return BlockResponse(id=block.id, code=block.code, name=block.name,
-                         description=block.description)
+    return BlockResponse(
+        id=block.id, code=block.code, name=block.name,
+        description=block.description, zone_id=block.zone_id,
+    )
 
 
 @router.delete("/blocks/{block_id}", status_code=204)
