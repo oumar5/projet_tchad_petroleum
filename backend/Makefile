@@ -57,4 +57,7 @@ seed-users:
 seed-data:
 	bash infra/scripts/seed-prod-data.sh
 
-seed-all: seed-users seed-data
+seed-ml:
+	bash infra/scripts/seed-ml-baseline.sh
+
+seed-all: seed-users seed-data seed-ml

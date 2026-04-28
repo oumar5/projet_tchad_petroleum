@@ -7,7 +7,7 @@ COPY services/ml_service/requirements.txt /app/services/ml_service/requirements.
 RUN pip install -r /app/shared/requirements.txt -r /app/services/ml_service/requirements.txt
 COPY shared /app/shared
 COPY services/ml_service /app/services/ml_service
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN mkdir -p /app/models && useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -fsS http://localhost:8000/health || exit 1

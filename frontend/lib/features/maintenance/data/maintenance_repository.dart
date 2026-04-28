@@ -36,4 +36,15 @@ class MaintenanceRepository {
       'description': ?description,
     });
   }
+
+  Future<Map<String, dynamic>> predictRisk({
+    required String block,
+    int horizonDays = 7,
+  }) async {
+    final r = await _client.dio.post(
+      '/v1/ml/predict/maintenance',
+      data: {'block': block, 'horizon_days': horizonDays},
+    );
+    return Map<String, dynamic>.from(r.data as Map);
+  }
 }

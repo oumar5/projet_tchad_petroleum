@@ -5,6 +5,7 @@ import '../../../core/theme.dart';
 import '../../dashboard/presentation/dashboard_screen.dart';
 import '../../forecast/presentation/forecast_screen.dart';
 import '../../maintenance/presentation/maintenance_screen.dart';
+import '../../models/presentation/models_screen.dart';
 import '../../production/presentation/production_screen.dart';
 import '../../water/presentation/water_screen.dart';
 import '../auth_controller.dart';
@@ -29,6 +30,8 @@ const _navItems = <_NavItem>[
   _NavItem(Icons.build_outlined, Icons.build_rounded, 'Maintenance'),
   _NavItem(Icons.timeline_outlined, Icons.timeline_rounded, 'Prévision'),
   _NavItem(Icons.water_drop_outlined, Icons.water_drop_rounded, 'Injection'),
+  _NavItem(Icons.precision_manufacturing_outlined,
+      Icons.precision_manufacturing_rounded, 'Modèles'),
 ];
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
@@ -40,6 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     MaintenanceScreen(),
     ForecastScreen(),
     WaterScreen(),
+    ModelsScreen(),
   ];
 
   @override

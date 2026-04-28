@@ -146,6 +146,28 @@ services:
       - "traefik.http.services.ml.loadbalancer.server.port=8000"
     networks: [smartbarrel-net]
 
+  ml-worker:
+    build:
+      context: .
+      dockerfile: services/ml_service/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command:
+      - celery
+      - -A
+      - services.ml_service.app.workers.celery_app
+      - worker
+      - --loglevel=info
+      - --concurrency=2
+    volumes:
+      - ml_models:/app/models
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [smartbarrel-net]
+
   etl-service:
     build:
       context: .

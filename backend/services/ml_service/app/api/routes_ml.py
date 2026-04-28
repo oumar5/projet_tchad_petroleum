@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.auth import CurrentUser, require_permission
 
+from ..core.settings import get_settings
 from ..models import MLJob, MLModel, MLPrediction
 from ..schemas import (
     JobResponse,
@@ -40,6 +41,10 @@ async def _publish(request: Request, routing_key: str, payload: dict) -> None:
             await publisher.publish(routing_key, payload)
 
 
+# ---------------------------------------------------------------------------
+# Real predict endpoints — no more stubs
+# ---------------------------------------------------------------------------
+
 @router.post("/predict/maintenance", response_model=PredictionResponse)
 async def predict_maintenance(
     body: PredictMaintenanceRequest,
@@ -48,32 +53,42 @@ async def predict_maintenance(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> PredictionResponse:
     inference = request.app.state.inference
+    settings = get_settings()
     model_record = (
         await inference.get_model_by_id(session, body.model_id)
         if body.model_id
         else await inference.get_active_model(session, "maintenance")
     )
 
+    result = await _run_in_thread(
+        inference.predict_maintenance,
+        model_record,
+        settings.database_url,
+        block=body.block,
+        horizon_days=body.horizon_days,
+    )
+
     pred = MLPrediction(
-        model_id=model_record.id, prediction_type="maintenance",
+        model_id=model_record.id,
+        prediction_type="maintenance",
         input_data=body.model_dump(mode="json"),
-        output_data={"stub": True, "horizon_days": body.horizon_days},
-        confidence=0.85, requested_by=UUID(user.id),
+        output_data=result,
+        confidence=result.get("confidence"),
+        requested_by=UUID(user.id),
     )
     session.add(pred)
     await session.flush()
     await _publish(request, "prediction.completed", {
-        "prediction_id": str(pred.id), "type": "maintenance",
-        "model_id": str(model_record.id), "block": body.block,
+        "prediction_id": str(pred.id),
+        "type": "maintenance",
+        "model_id": str(model_record.id),
+        "block": body.block,
     })
 
     return PredictionResponse(
-        predictions=[{
-            "block": body.block, "horizon_days": body.horizon_days,
-            "stub_prediction": True,
-        }],
+        predictions=result["predictions"],
         model=_serialize_model(model_record),
-        confidence=0.85,
+        confidence=result.get("confidence"),
     )
 
 
@@ -85,26 +100,40 @@ async def predict_forecast(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> PredictionResponse:
     inference = request.app.state.inference
+    settings = get_settings()
     model_record = (
         await inference.get_model_by_id(session, body.model_id)
         if body.model_id
         else await inference.get_active_model(session, "forecast")
     )
+
+    result = await _run_in_thread(
+        inference.predict_forecast,
+        model_record,
+        settings.database_url,
+        horizon_days=body.horizon_days,
+    )
+
     pred = MLPrediction(
-        model_id=model_record.id, prediction_type="forecast",
+        model_id=model_record.id,
+        prediction_type="forecast",
         input_data=body.model_dump(mode="json"),
-        output_data={"stub": True}, requested_by=UUID(user.id),
+        output_data={"horizon_days": body.horizon_days, "n_points": len(result["predictions"])},
+        confidence=result.get("confidence"),
+        requested_by=UUID(user.id),
     )
     session.add(pred)
     await session.flush()
     await _publish(request, "prediction.completed", {
-        "prediction_id": str(pred.id), "type": "forecast",
+        "prediction_id": str(pred.id),
+        "type": "forecast",
         "model_id": str(model_record.id),
     })
+
     return PredictionResponse(
-        predictions=[{"target": body.target, "horizon_days": body.horizon_days,
-                      "stub_prediction": True}],
+        predictions=result["predictions"],
         model=_serialize_model(model_record),
+        confidence=result.get("confidence"),
     )
 
 
@@ -116,27 +145,55 @@ async def predict_water(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> PredictionResponse:
     inference = request.app.state.inference
+    settings = get_settings()
     model_record = (
         await inference.get_model_by_id(session, body.model_id)
         if body.model_id
-        else await inference.get_active_model(session, "water_injection")
+        else await inference.get_active_model(session, "water")
     )
+
+    result = await _run_in_thread(
+        inference.predict_water,
+        model_record,
+        settings.database_url,
+        block=body.block,
+        target_oil_bbl=body.target_oil_bbl,
+    )
+
     pred = MLPrediction(
-        model_id=model_record.id, prediction_type="water",
+        model_id=model_record.id,
+        prediction_type="water",
         input_data=body.model_dump(mode="json"),
-        output_data={"stub": True}, requested_by=UUID(user.id),
+        output_data=result,
+        confidence=result.get("confidence"),
+        requested_by=UUID(user.id),
     )
     session.add(pred)
     await session.flush()
     await _publish(request, "prediction.completed", {
-        "prediction_id": str(pred.id), "type": "water",
-        "model_id": str(model_record.id), "block": body.block,
+        "prediction_id": str(pred.id),
+        "type": "water",
+        "model_id": str(model_record.id),
+        "block": body.block,
     })
+
     return PredictionResponse(
-        predictions=[{"block": body.block, "stub_prediction": True}],
+        predictions=result["predictions"],
         model=_serialize_model(model_record),
+        confidence=result.get("confidence"),
     )
 
+
+async def _run_in_thread(fn, *args, **kwargs):
+    """Run a sync inference call (blocking pandas/joblib) off the event loop."""
+    import asyncio
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
+
+
+# ---------------------------------------------------------------------------
+# Train (queues a Celery job — see workers/celery_app.py for the real pipeline)
+# ---------------------------------------------------------------------------
 
 @router.post("/train", response_model=JobResponse, status_code=202)
 async def train(
@@ -211,7 +268,6 @@ async def activate_model(
     target = await session.get(MLModel, model_id)
     if target is None:
         raise HTTPException(404, "Model not found")
-    # Deactivate other models of same type
     others = (await session.execute(
         select(MLModel).where(
             MLModel.model_type == target.model_type, MLModel.id != target.id,
