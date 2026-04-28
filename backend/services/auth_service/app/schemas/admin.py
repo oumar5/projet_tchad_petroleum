@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
     full_name: str
     role_names: list[str] = Field(default_factory=list)
 

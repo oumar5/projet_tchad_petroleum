@@ -157,7 +157,7 @@ services:
       - ./infra/jwt:/etc/jwt:ro
       - ../data:/app/data:ro
     tmpfs:
-      - /tmp/etl_uploads
+      - /tmp/etl_uploads:mode=1777
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }

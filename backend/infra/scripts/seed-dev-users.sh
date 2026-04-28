@@ -15,11 +15,13 @@ reg_or_skip() {
     || echo "  exists   $email"
 }
 
-echo "→ Registering 4 dev users..."
-reg_or_skip "admin@smartbarrel.td"    "Admin-Pa\$\$word-12345"    "Admin Dev"
-reg_or_skip "engineer@smartbarrel.td" "Engineer-Pa\$\$word-12345" "Engineer Dev"
-reg_or_skip "analyst@smartbarrel.td"  "Analyst-Pa\$\$word-12345"  "Analyst Dev"
-reg_or_skip "viewer@smartbarrel.td"   "Viewer-Pa\$\$word-12345"   "Viewer Dev"
+DEV_PWD="${DEV_PASSWORD:-123456}"
+
+echo "→ Registering 4 dev users (password: $DEV_PWD)..."
+reg_or_skip "admin@smartbarrel.td"    "$DEV_PWD" "Admin Dev"
+reg_or_skip "engineer@smartbarrel.td" "$DEV_PWD" "Engineer Dev"
+reg_or_skip "analyst@smartbarrel.td"  "$DEV_PWD" "Analyst Dev"
+reg_or_skip "viewer@smartbarrel.td"   "$DEV_PWD" "Viewer Dev"
 
 echo "→ Promoting roles via psql..."
 docker compose -f smartbarrel.compose.yml exec -T postgres \

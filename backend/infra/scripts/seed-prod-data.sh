@@ -9,7 +9,7 @@ set -euo pipefail
 
 API="${API_BASE_URL:-http://api.localhost}"
 EMAIL="${SEED_USER:-engineer@smartbarrel.td}"
-PASSWORD="${SEED_PASSWORD:-Engineer-Pa\$\$word-12345}"
+PASSWORD="${SEED_PASSWORD:-123456}"
 
 # Localiser le fichier Excel : repo_root/data/...
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,8 +33,9 @@ if [ -z "$TOKEN" ]; then
 fi
 echo "  ✓ token obtenu"
 
-echo "→ Upload de $(basename "$EXCEL_FILE") vers $API/v1/etl/ingest/excel"
-RESPONSE=$(curl -fsS -X POST "$API/v1/etl/ingest/excel?label=seed-baseline" \
+LABEL="seed-$(date +%Y%m%d-%H%M%S)"
+echo "→ Upload de $(basename "$EXCEL_FILE") vers $API/v1/etl/ingest/excel (label=$LABEL)"
+RESPONSE=$(curl -fsS -X POST "$API/v1/etl/ingest/excel?label=$LABEL" \
   -H "Authorization: Bearer $TOKEN" \
   -F "upload=@${EXCEL_FILE};type=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 

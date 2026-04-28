@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,9 +28,11 @@ class _SmartBarrelAppState extends ConsumerState<SmartBarrelApp> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FcmService(ref.read(apiClientProvider)).init();
-    });
+    if (!kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FcmService(ref.read(apiClientProvider)).init();
+      });
+    }
   }
 
   @override
