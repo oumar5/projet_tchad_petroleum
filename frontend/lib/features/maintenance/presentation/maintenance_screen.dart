@@ -445,7 +445,9 @@ class _FailuresTab extends ConsumerWidget {
             return const EmptyState(
               icon: Icons.health_and_safety_outlined,
               title: 'Aucune panne déclarée',
-              subtitle: 'Les nouvelles pannes apparaîtront ici en temps réel.',
+              subtitle:
+                  'C’est plutôt bonne nouvelle ! Les pannes saisies par les techniciens '
+                  'ou détectées par les capteurs apparaîtront ici dès leur déclaration.',
             );
           }
           return ListView.separated(
@@ -569,8 +571,11 @@ class _InterventionsTab extends ConsumerWidget {
           if (rows.isEmpty) {
             return const EmptyState(
               icon: Icons.build_outlined,
-              title: 'Aucune intervention',
-              subtitle: 'Les interventions terminées s\'afficheront ici.',
+              title: 'Aucune intervention enregistrée',
+              subtitle:
+                  'Dès qu’une équipe déclare une intervention sur le terrain '
+                  '(remplacement de pompe, nettoyage, contrôle…), elle s’affichera ici '
+                  'avec sa durée et son coût.',
             );
           }
           return ListView.separated(

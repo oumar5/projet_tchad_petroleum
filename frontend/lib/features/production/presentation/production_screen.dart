@@ -103,14 +103,26 @@ class _DailyDataTab extends ConsumerWidget {
           data: (items) {
             if (items.isEmpty) {
               return EmptyState(
-                icon: Icons.inbox_outlined,
-                title: 'Aucune donnée',
+                icon: Icons.cloud_upload_outlined,
+                title: 'Démarrons en important vos données',
                 subtitle:
-                    'Importe le fichier Excel ou ajoute une saisie manuelle.',
-                action: FilledButton.icon(
-                  onPressed: () => _showCreateDialog(context, ref),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Ajouter'),
+                    'Aucune saisie pour le moment.\n\n• Importez un fichier Excel pour charger l’historique en quelques secondes.\n• Ou ajoutez manuellement une journée de production.',
+                action: Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: () => _showExcelImport(context, ref),
+                      icon: const Icon(Icons.upload_file_rounded),
+                      label: const Text('Importer Excel'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _showCreateDialog(context, ref),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Saisie manuelle'),
+                    ),
+                  ],
                 ),
               );
             }

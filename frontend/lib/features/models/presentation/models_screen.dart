@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -747,42 +749,76 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
   String _algo = 'gradient_boosting';
   bool _submitting = false;
   String? _jobStatus;
+  String? _jobError;
+  DateTime? _startedAt;
+  Duration _elapsed = Duration.zero;
+  Timer? _ticker;
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _startedAt = DateTime.now();
+    _elapsed = Duration.zero;
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _startedAt == null) return;
+      setState(() => _elapsed = DateTime.now().difference(_startedAt!));
+    });
+  }
 
   Future<void> _submit() async {
     setState(() {
       _submitting = true;
       _jobStatus = 'queued';
+      _jobError = null;
     });
+    _startTicker();
     try {
       final repo = ref.read(widget.repoProvider);
       final jobId = await repo.startTraining(
         modelType: widget.useCase.type,
         algorithm: _algo,
       );
+      String finalStatus = 'queued';
       for (var i = 0; i < 100; i++) {
-        await Future<void>.delayed(const Duration(seconds: 3));
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
         final job = await repo.getJob(jobId);
         final status = job['status']?.toString() ?? 'queued';
-        if (mounted) setState(() => _jobStatus = status);
-        if (status == 'success' || status == 'failed') break;
+        final err = job['error']?.toString();
+        if (mounted) {
+          setState(() {
+            _jobStatus = status;
+            _jobError = err;
+          });
+        }
+        if (status == 'success' || status == 'failed') {
+          finalStatus = status;
+          break;
+        }
       }
+      _ticker?.cancel();
       ref.invalidate(widget.modelsProvider);
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_jobStatus == 'success'
-              ? 'Entraînement terminé : nouveau modèle activé.'
-              : 'Entraînement terminé : $_jobStatus'),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
+      if (finalStatus == 'success') {
+        Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(prettyError(e))),
+          const SnackBar(content: Text('Entraînement terminé. Nouveau modèle activé.')),
         );
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _jobStatus = 'failed';
+          _jobError = prettyError(e);
+        });
+      }
     } finally {
+      _ticker?.cancel();
       if (mounted) setState(() => _submitting = false);
     }
   }
@@ -892,32 +928,229 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
                   : (v) => setState(() => _algo = v ?? 'gradient_boosting'),
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _submitting ? null : _submit,
-              icon: _submitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.fitness_center_rounded),
-              label: Text(_submitting
-                  ? 'Entraînement en cours${_jobStatus != null ? " · $_jobStatus" : ""}…'
-                  : 'Démarrer l\'entraînement'),
-            ),
+            if (_submitting || _jobStatus == 'failed')
+              _TrainProgress(
+                status: _jobStatus ?? 'queued',
+                error: _jobError,
+                elapsed: _elapsed,
+                color: uc.color,
+              )
+            else
+              FilledButton.icon(
+                onPressed: _submit,
+                icon: const Icon(Icons.fitness_center_rounded),
+                label: const Text('Démarrer l\'entraînement'),
+              ),
             const SizedBox(height: 8),
+            if (!_submitting && _jobStatus != 'failed')
+              Text(
+                'L\'entraînement prend généralement entre 5 et 30 secondes.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            if (_jobStatus == 'failed') ...[
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: _submit,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Réessayer'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Visual feedback during ML training: stepper + indeterminate progress + elapsed time + error.
+class _TrainProgress extends StatelessWidget {
+  const _TrainProgress({
+    required this.status,
+    required this.elapsed,
+    required this.color,
+    this.error,
+  });
+
+  final String status;
+  final Duration elapsed;
+  final Color color;
+  final String? error;
+
+  static const _steps = [
+    ('queued', 'En file d\'attente', Icons.hourglass_empty_rounded),
+    ('running', 'Entraînement en cours', Icons.psychology_rounded),
+    ('success', 'Modèle activé', Icons.check_circle_rounded),
+  ];
+
+  int get _currentIndex {
+    if (status == 'failed') return 1;
+    if (status == 'success') return 2;
+    if (status == 'running') return 1;
+    return 0;
+  }
+
+  String _frenchStatus() {
+    switch (status) {
+      case 'queued':
+        return 'Préparation des données…';
+      case 'running':
+        return 'Apprentissage en cours sur l\'historique…';
+      case 'success':
+        return 'Terminé avec succès';
+      case 'failed':
+        return 'Échec';
+      default:
+        return status;
+    }
+  }
+
+  String _formatElapsed() {
+    final s = elapsed.inSeconds;
+    if (s < 60) return '${s}s';
+    return '${s ~/ 60}m ${s % 60}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isFailed = status == 'failed';
+    final accent = isFailed ? scheme.error : color;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              for (int i = 0; i < _steps.length; i++) ...[
+                _StepDot(
+                  label: _steps[i].$2,
+                  icon: _steps[i].$3,
+                  state: i < _currentIndex
+                      ? _StepState.done
+                      : (i == _currentIndex
+                          ? (isFailed ? _StepState.failed : _StepState.active)
+                          : _StepState.pending),
+                  color: accent,
+                ),
+                if (i < _steps.length - 1)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      color: i < _currentIndex
+                          ? accent
+                          : scheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (!isFailed)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                minHeight: 6,
+                color: accent,
+                backgroundColor: accent.withValues(alpha: 0.15),
+                value: status == 'success' ? 1 : null,
+              ),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(
+                isFailed
+                    ? Icons.error_outline_rounded
+                    : Icons.timer_outlined,
+                size: 16,
+                color: accent,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _frenchStatus(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ),
+              if (!isFailed)
+                Text(
+                  _formatElapsed(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          if (isFailed && error != null) ...[
+            const SizedBox(height: 6),
             Text(
-              'L\'entraînement prend généralement entre 5 et 30 secondes.',
-              textAlign: TextAlign.center,
+              error!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+enum _StepState { pending, active, done, failed }
+
+class _StepDot extends StatelessWidget {
+  const _StepDot({
+    required this.label,
+    required this.icon,
+    required this.state,
+    required this.color,
+  });
+  final String label;
+  final IconData icon;
+  final _StepState state;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg, ic) = switch (state) {
+      _StepState.done => (color, Colors.white, Icons.check_rounded),
+      _StepState.active => (color.withValues(alpha: 0.15), color, icon),
+      _StepState.failed => (scheme.errorContainer, scheme.error, Icons.close_rounded),
+      _StepState.pending => (
+          scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          scheme.outline,
+          icon,
         ),
+    };
+    return Tooltip(
+      message: label,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: state == _StepState.active
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: fg),
+              )
+            : Icon(ic, size: 18, color: fg),
       ),
     );
   }

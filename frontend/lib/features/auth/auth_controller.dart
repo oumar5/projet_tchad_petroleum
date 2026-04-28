@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api_error.dart';
 import '../../core/providers.dart';
 import 'data/auth_repository.dart';
 
@@ -40,7 +41,7 @@ class AuthController extends StateNotifier<AuthState> {
       final me = await _repo.me();
       state = state.copyWith(user: me, loading: false);
     } catch (e) {
-      state = state.copyWith(loading: false, error: e.toString());
+      state = state.copyWith(loading: false, error: prettyError(e));
     }
   }
 
