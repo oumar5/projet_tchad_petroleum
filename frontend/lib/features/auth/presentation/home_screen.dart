@@ -6,6 +6,7 @@ import '../../about/presentation/about_screen.dart';
 import '../../configuration/presentation/configuration_screen.dart';
 import '../../dashboard/presentation/dashboard_screen.dart';
 import '../../maintenance/presentation/maintenance_screen.dart';
+import '../../models/presentation/models_screen_page.dart';
 import '../../production/presentation/production_screen.dart';
 import '../../water/presentation/water_screen.dart';
 import '../auth_controller.dart';
@@ -29,6 +30,7 @@ const _navItems = <_NavItem>[
   _NavItem(Icons.list_alt_outlined, Icons.list_alt_rounded, 'Production'),
   _NavItem(Icons.build_outlined, Icons.build_rounded, 'Maintenance'),
   _NavItem(Icons.water_drop_outlined, Icons.water_drop_rounded, 'Injection'),
+  _NavItem(Icons.psychology_outlined, Icons.psychology_rounded, 'Modèles IA'),
   _NavItem(Icons.tune_outlined, Icons.tune_rounded, 'Configuration'),
   _NavItem(Icons.info_outline_rounded, Icons.info_rounded, 'À propos'),
 ];
@@ -41,6 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ProductionScreen(),
     MaintenanceScreen(),
     WaterScreen(),
+    ModelsScreenPage(),
     ConfigurationScreen(),
     AboutScreen(),
   ];

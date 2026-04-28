@@ -51,7 +51,12 @@ app = FastAPI(
 attach_cors(app)
 @app.exception_handler(InferenceError)
 async def inference_error_handler(_: Request, exc: InferenceError) -> JSONResponse:
-    return JSONResponse(status_code=404, content={"detail": str(exc)})
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(_: Request, exc: ValueError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 @app.get("/health", tags=["meta"])

@@ -8,7 +8,6 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/section_header.dart';
-import '../../models/presentation/models_screen.dart';
 
 class ConfigurationScreen extends ConsumerWidget {
   const ConfigurationScreen({super.key});
@@ -16,22 +15,17 @@ class ConfigurationScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Configuration'),
           bottom: const TabBar(
             indicatorWeight: 3,
-            isScrollable: true,
             labelStyle: TextStyle(fontWeight: FontWeight.w700),
             tabs: [
               Tab(icon: Icon(Icons.public_rounded), text: 'Zones'),
               Tab(icon: Icon(Icons.layers_rounded), text: 'Blocs'),
               Tab(icon: Icon(Icons.opacity_rounded), text: 'Puits'),
-              Tab(
-                icon: Icon(Icons.auto_awesome_rounded),
-                text: 'Modèles IA',
-              ),
             ],
           ),
         ),
@@ -39,7 +33,6 @@ class ConfigurationScreen extends ConsumerWidget {
           _ZonesTab(),
           _BlocksTab(),
           _WellsTab(),
-          ModelsManagementView(),
         ]),
       ),
     );
