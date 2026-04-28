@@ -3,6 +3,7 @@ from shared.config import BaseServiceSettings
 
 class MaintenanceSettings(BaseServiceSettings):
     service_name: str = "maintenance-service"
+    attachments_dir: str = "/app/attachments"
 
 
 _settings: MaintenanceSettings | None = None

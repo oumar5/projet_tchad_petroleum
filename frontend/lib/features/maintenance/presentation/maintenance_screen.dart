@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -448,46 +449,62 @@ class _FailuresTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final failures = ref.watch(_failuresProvider);
-    return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(_failuresProvider),
-      child: failures.when(
-        loading: () => const _LoadingList(),
-        error: (e, _) => ErrorState(
-          error: e,
-          onRetry: () => ref.invalidate(_failuresProvider),
-        ),
-        data: (items) {
-          if (items.isEmpty) {
-            return const EmptyState(
-              icon: Icons.health_and_safety_outlined,
-              title: 'Aucune panne déclarée',
-              subtitle:
-                  'C’est plutôt bonne nouvelle ! Les pannes saisies par les techniciens '
-                  'ou détectées par les capteurs apparaîtront ici dès leur déclaration.',
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab-failure',
+        onPressed: () => _showDeclareFailureDialog(context, ref),
+        icon: const Icon(Icons.add_alert_rounded),
+        label: const Text('Déclarer une panne'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async => ref.invalidate(_failuresProvider),
+        child: failures.when(
+          loading: () => const _LoadingList(),
+          error: (e, _) => ErrorState(
+            error: e,
+            onRetry: () => ref.invalidate(_failuresProvider),
+          ),
+          data: (items) {
+            if (items.isEmpty) {
+              return EmptyState(
+                icon: Icons.health_and_safety_outlined,
+                title: 'Aucune panne déclarée',
+                subtitle:
+                    'Aucun incident à signaler.\n\nDéclare une panne dès qu’un technicien remonte un défaut '
+                    'pour qu’elle soit suivie ici.',
+                action: FilledButton.icon(
+                  onPressed: () => _showDeclareFailureDialog(context, ref),
+                  icon: const Icon(Icons.add_alert_rounded),
+                  label: const Text('Déclarer une panne'),
+                ),
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (_, i) => _FailureCard(row: items[i]),
             );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _FailureCard(row: items[i]),
-          );
-        },
+          },
+        ),
       ),
     );
   }
 }
 
-class _FailureCard extends StatelessWidget {
+class _FailureCard extends ConsumerWidget {
   const _FailureCard({required this.row});
   final Map<String, dynamic> row;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final sev = (row['severity'] ?? 'low').toString();
     final entry = _severityMap[sev] ?? ('Inconnu', scheme.outline);
-    final resolved = row['resolved_at'] != null;
+    final status = (row['status'] ?? 'pending').toString();
+    final resolved = status == 'resolved' || row['resolved_at'] != null;
+    final id = row['id']?.toString();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -495,7 +512,7 @@ class _FailureCard extends StatelessWidget {
           children: [
             Container(
               width: 8,
-              height: 64,
+              height: 72,
               decoration: BoxDecoration(
                 color: entry.$2,
                 borderRadius: BorderRadius.circular(4),
@@ -508,10 +525,15 @@ class _FailureCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        '${row['block'] ?? '—'} · ${row['failure_type'] ?? '—'}',
-                        style: Theme.of(context).textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                      Expanded(
+                        child: Text(
+                          '${row['block'] ?? '—'}'
+                          '${row['well_code'] != null ? ' · ${row['well_code']}' : ''}'
+                          ' · ${row['failure_type'] ?? '—'}',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Container(
@@ -533,11 +555,17 @@ class _FailureCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    fmtDate(row['notification_date']),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        fmtDate(row['notification_date']),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _StatusChip(status: status),
+                    ],
                   ),
                   if (row['description'] != null) ...[
                     const SizedBox(height: 6),
@@ -551,18 +579,434 @@ class _FailureCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             if (resolved)
               const Icon(Icons.check_circle_rounded,
-                  color: AppColors.goodGreen, size: 26)
+                  color: AppColors.goodGreen, size: 24)
             else
               Icon(Icons.pending_rounded,
                   color: scheme.onSurfaceVariant, size: 22),
+            if (id != null)
+              PopupMenuButton<String>(
+                tooltip: 'Actions',
+                icon: const Icon(Icons.more_vert_rounded),
+                onSelected: (action) =>
+                    _onFailureAction(context, ref, id, action),
+                itemBuilder: (_) => [
+                  if (status != 'in_progress' && status != 'resolved')
+                    const PopupMenuItem(
+                      value: 'in_progress',
+                      child: ListTile(
+                        leading: Icon(Icons.play_arrow_rounded),
+                        title: Text('Marquer en cours'),
+                      ),
+                    ),
+                  if (status != 'resolved')
+                    const PopupMenuItem(
+                      value: 'resolved',
+                      child: ListTile(
+                        leading: Icon(Icons.check_circle_outline),
+                        title: Text('Marquer résolu'),
+                      ),
+                    ),
+                  if (status == 'resolved')
+                    const PopupMenuItem(
+                      value: 'reopen',
+                      child: ListTile(
+                        leading: Icon(Icons.replay_rounded),
+                        title: Text('Rouvrir'),
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'attach',
+                    child: ListTile(
+                      leading: Icon(Icons.attach_file_rounded),
+                      title: Text('Ajouter une photo'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'intervention',
+                    child: ListTile(
+                      leading: Icon(Icons.build_rounded),
+                      title: Text('Ajouter une intervention'),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
     );
   }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.status});
+  final String status;
+  static const _labels = {
+    'pending': ('En attente', Icons.schedule_rounded),
+    'in_progress': ('En cours', Icons.play_arrow_rounded),
+    'resolved': ('Résolu', Icons.check_circle_rounded),
+    'cancelled': ('Annulé', Icons.cancel_rounded),
+  };
+  static const _colors = {
+    'pending': AppColors.warnOrange,
+    'in_progress': AppColors.tealAccent,
+    'resolved': AppColors.goodGreen,
+    'cancelled': Colors.grey,
+  };
+  @override
+  Widget build(BuildContext context) {
+    final entry = _labels[status] ?? ('Inconnu', Icons.help_outline);
+    final color = _colors[status] ?? Colors.grey;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(entry.$2, color: color, size: 12),
+          const SizedBox(width: 4),
+          Text(
+            entry.$1,
+            style: TextStyle(
+              color: color, fontSize: 10.5, fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _onFailureAction(
+    BuildContext context, WidgetRef ref, String id, String action) async {
+  final repo = ref.read(_repoProvider);
+  try {
+    switch (action) {
+      case 'in_progress':
+        await repo.updateFailure(failureId: id, status: 'in_progress');
+        break;
+      case 'resolved':
+        await repo.updateFailure(failureId: id, status: 'resolved');
+        break;
+      case 'reopen':
+        await repo.updateFailure(failureId: id, status: 'pending');
+        break;
+      case 'attach':
+        if (context.mounted) await _pickAndUploadPhoto(context, ref, id);
+        return;
+      case 'intervention':
+        if (context.mounted) {
+          await _showInterventionDialog(context, ref, failureId: id);
+        }
+        return;
+    }
+    ref.invalidate(_failuresProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mis à jour')),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(prettyError(e))),
+      );
+    }
+  }
+}
+
+Future<void> _pickAndUploadPhoto(
+    BuildContext context, WidgetRef ref, String failureId) async {
+  final picked = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+    withData: true,
+  );
+  if (picked == null || picked.files.isEmpty) return;
+  final f = picked.files.single;
+  if (f.bytes == null || f.bytes!.isEmpty) return;
+  final ext = (f.extension ?? '').toLowerCase();
+  final mime = switch (ext) {
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'png' => 'image/png',
+    'webp' => 'image/webp',
+    'pdf' => 'application/pdf',
+    _ => 'application/octet-stream',
+  };
+  try {
+    await ref.read(_repoProvider).uploadFailureAttachment(
+          failureId: failureId,
+          filename: f.name,
+          bytes: f.bytes!,
+          mimeType: mime,
+        );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Photo attachée')),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(prettyError(e))),
+      );
+    }
+  }
+}
+
+Future<void> _showDeclareFailureDialog(
+    BuildContext context, WidgetRef ref) async {
+  final dateCtrl = TextEditingController(
+      text: DateTime.now().toIso8601String().substring(0, 10));
+  final wellCtrl = TextEditingController();
+  final descCtrl = TextEditingController();
+  final etaCtrl = TextEditingController();
+  String type = 'ESP_motor';
+  String severity = 'medium';
+
+  await showDialog<void>(
+    context: context,
+    builder: (dlgCtx) => StatefulBuilder(
+      builder: (sbCtx, setLocal) => AlertDialog(
+        title: const Text('Déclarer une panne'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: dateCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Date (YYYY-MM-DD)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const ZoneBlockPicker(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: wellCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Code puits (optionnel, ex: X-04)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: type,
+                  decoration: const InputDecoration(labelText: 'Type de panne'),
+                  items: const [
+                    DropdownMenuItem(value: 'ESP_motor', child: Text('Moteur ESP')),
+                    DropdownMenuItem(value: 'ESP_pump', child: Text('Pompe ESP')),
+                    DropdownMenuItem(value: 'cable', child: Text('Câble')),
+                    DropdownMenuItem(value: 'sensor', child: Text('Capteur')),
+                    DropdownMenuItem(value: 'flowline', child: Text('Conduite')),
+                    DropdownMenuItem(value: 'other', child: Text('Autre')),
+                  ],
+                  onChanged: (v) => setLocal(() => type = v ?? type),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: severity,
+                  decoration: const InputDecoration(labelText: 'Sévérité'),
+                  items: const [
+                    DropdownMenuItem(value: 'low', child: Text('Basse')),
+                    DropdownMenuItem(value: 'medium', child: Text('Moyenne')),
+                    DropdownMenuItem(value: 'high', child: Text('Haute')),
+                    DropdownMenuItem(value: 'critical', child: Text('Critique')),
+                  ],
+                  onChanged: (v) => setLocal(() => severity = v ?? severity),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: etaCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Durée estimée (heures)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    hintText: 'Symptômes observés, contexte…',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              try {
+                final blockCode = ref.read(selectedBlockProvider);
+                final eta = int.tryParse(etaCtrl.text);
+                await ref.read(_repoProvider).reportFailure(
+                      date: dateCtrl.text,
+                      block: blockCode,
+                      wellCode: wellCtrl.text.isEmpty ? null : wellCtrl.text,
+                      type: type,
+                      severity: severity,
+                      description:
+                          descCtrl.text.isEmpty ? null : descCtrl.text,
+                      estimatedDurationH: eta,
+                    );
+                if (dlgCtx.mounted) Navigator.pop(dlgCtx);
+                ref.invalidate(_failuresProvider);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Panne déclarée')),
+                  );
+                }
+              } catch (e) {
+                if (dlgCtx.mounted) {
+                  ScaffoldMessenger.of(dlgCtx).showSnackBar(
+                    SnackBar(content: Text(prettyError(e))),
+                  );
+                }
+              }
+            },
+            child: const Text('Déclarer'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> _showInterventionDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  String? failureId,
+}) async {
+  final dateCtrl = TextEditingController(
+      text: DateTime.now().toIso8601String().substring(0, 10));
+  final durationCtrl = TextEditingController();
+  final costCtrl = TextEditingController();
+  final notesCtrl = TextEditingController();
+  String type = 'inspection';
+  String result = 'success';
+
+  await showDialog<void>(
+    context: context,
+    builder: (dlgCtx) => StatefulBuilder(
+      builder: (sbCtx, setLocal) => AlertDialog(
+        title: Text(failureId != null
+            ? 'Intervention pour cette panne'
+            : 'Nouvelle intervention'),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: dateCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Date (YYYY-MM-DD)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: type,
+                  decoration: const InputDecoration(labelText: 'Type'),
+                  items: const [
+                    DropdownMenuItem(value: 'inspection', child: Text('Inspection')),
+                    DropdownMenuItem(value: 'repair', child: Text('Réparation')),
+                    DropdownMenuItem(value: 'replacement', child: Text('Remplacement')),
+                    DropdownMenuItem(value: 'cleaning', child: Text('Nettoyage')),
+                  ],
+                  onChanged: (v) => setLocal(() => type = v ?? type),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: durationCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Durée (heures)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: costCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Coût (USD)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: result,
+                  decoration: const InputDecoration(labelText: 'Résultat'),
+                  items: const [
+                    DropdownMenuItem(value: 'success', child: Text('Succès')),
+                    DropdownMenuItem(value: 'partial', child: Text('Partiel')),
+                    DropdownMenuItem(value: 'failed', child: Text('Échec')),
+                  ],
+                  onChanged: (v) => setLocal(() => result = v ?? result),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await ref.read(_repoProvider).createIntervention(
+                      date: dateCtrl.text,
+                      type: type,
+                      failureId: failureId,
+                      durationH: double.tryParse(durationCtrl.text),
+                      cost: double.tryParse(costCtrl.text),
+                      result: result,
+                      notes: notesCtrl.text.isEmpty ? null : notesCtrl.text,
+                    );
+                if (dlgCtx.mounted) Navigator.pop(dlgCtx);
+                ref.invalidate(_interventionsProvider);
+                if (failureId != null) ref.invalidate(_failuresProvider);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Intervention enregistrée')),
+                  );
+                }
+              } catch (e) {
+                if (dlgCtx.mounted) {
+                  ScaffoldMessenger.of(dlgCtx).showSnackBar(
+                    SnackBar(content: Text(prettyError(e))),
+                  );
+                }
+              }
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 // ----------------------------------------------------------------------------
@@ -575,7 +1019,15 @@ class _InterventionsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(_interventionsProvider);
-    return RefreshIndicator(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab-intervention',
+        onPressed: () => _showInterventionDialog(context, ref),
+        icon: const Icon(Icons.build_rounded),
+        label: const Text('Nouvelle intervention'),
+      ),
+      body: RefreshIndicator(
       onRefresh: () async => ref.invalidate(_interventionsProvider),
       child: items.when(
         loading: () => const _LoadingList(),
@@ -624,6 +1076,7 @@ class _InterventionsTab extends ConsumerWidget {
             },
           );
         },
+      ),
       ),
     );
   }

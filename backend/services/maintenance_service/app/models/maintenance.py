@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -58,6 +59,10 @@ class Failure(UUIDMixin, TimestampMixin, Base):
     reported_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     metadata_json: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    status: Mapped[str] = mapped_column(Text, default="pending", nullable=False)
+    assigned_to: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True))
+    well_code: Mapped[str | None] = mapped_column(Text)
+    last_updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True))
 
 
 class Intervention(UUIDMixin, Base):
@@ -78,6 +83,36 @@ class Intervention(UUIDMixin, Base):
     cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     notes: Mapped[str | None] = mapped_column(Text)
     performed_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default="now()", nullable=False
+    )
+
+
+class Attachment(UUIDMixin, Base):
+    __tablename__ = "attachments"
+    __table_args__ = (
+        CheckConstraint(
+            "(failure_id IS NOT NULL)::int + (intervention_id IS NOT NULL)::int = 1",
+            name="attachments_one_parent",
+        ),
+        Index("ix_attachments_failure", "failure_id"),
+        Index("ix_attachments_intervention", "intervention_id"),
+        {"schema": "maintenance"},
+    )
+
+    failure_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("maintenance.failures.id", ondelete="CASCADE"),
+    )
+    intervention_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("maintenance.interventions.id", ondelete="CASCADE"),
+    )
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    uploaded_by: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default="now()", nullable=False
     )

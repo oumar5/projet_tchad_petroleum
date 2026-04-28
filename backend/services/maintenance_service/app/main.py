@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
 from shared.auth import JWTValidator
 from shared.db import create_engine_and_session
 from shared.logging import configure_logging
+from shared.messaging import EventPublisher
 from shared.middleware import attach_cors
 
 from .api.routes_maintenance import router
@@ -23,7 +25,16 @@ async def lifespan(app: FastAPI):
         algorithm=settings.jwt_algorithm,
         issuer=settings.jwt_issuer,
     )
+    Path(settings.attachments_dir).mkdir(parents=True, exist_ok=True)
+    app.state.attachments_dir = settings.attachments_dir
+    app.state.publisher = EventPublisher(settings.rabbitmq_url)
+    try:
+        await app.state.publisher.connect()
+    except Exception:
+        app.state.publisher = None
     yield
+    if getattr(app.state, "publisher", None):
+        await app.state.publisher.close()
     await engine.dispose()
 
 
