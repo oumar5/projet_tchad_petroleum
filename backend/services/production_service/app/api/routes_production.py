@@ -15,10 +15,14 @@ from shared.auth import CurrentUser, require_permission
 from ..core.cache import KpiCache
 from ..models import Block, DailyProduction, Well
 from ..schemas import (
+    BlockCreate,
     BlockResponse,
+    BlockUpdate,
     DailyProductionCreate,
     KpiResponse,
+    WellCreate,
     WellResponse,
+    WellUpdate,
 )
 from .deps import get_db
 
@@ -33,6 +37,73 @@ async def list_blocks(
     rows = list((await session.execute(select(Block).order_by(Block.code))).scalars())
     return [BlockResponse(id=b.id, code=b.code, name=b.name, description=b.description)
             for b in rows]
+
+
+@router.post("/blocks", response_model=BlockResponse, status_code=201)
+async def create_block(
+    body: BlockCreate,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> BlockResponse:
+    existing = (await session.execute(
+        select(Block).where(Block.code == body.code)
+    )).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(409, f"Le bloc '{body.code}' existe déjà.")
+    block = Block(code=body.code, name=body.name, description=body.description)
+    session.add(block)
+    await session.flush()
+    return BlockResponse(id=block.id, code=block.code, name=block.name,
+                         description=block.description)
+
+
+@router.patch("/blocks/{block_id}", response_model=BlockResponse)
+async def update_block(
+    block_id: UUID,
+    body: BlockUpdate,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> BlockResponse:
+    block = await session.get(Block, block_id)
+    if block is None:
+        raise HTTPException(404, "Bloc introuvable.")
+    if body.name is not None:
+        block.name = body.name
+    if body.description is not None:
+        block.description = body.description
+    await session.flush()
+    return BlockResponse(id=block.id, code=block.code, name=block.name,
+                         description=block.description)
+
+
+@router.delete("/blocks/{block_id}", status_code=204)
+async def delete_block(
+    block_id: UUID,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    block = await session.get(Block, block_id)
+    if block is None:
+        raise HTTPException(404, "Bloc introuvable.")
+    in_use = (await session.execute(
+        select(func.count()).select_from(DailyProduction).where(
+            DailyProduction.block_id == block_id
+        )
+    )).scalar_one()
+    if in_use > 0:
+        raise HTTPException(
+            409,
+            f"Impossible de supprimer : {in_use} ligne(s) de production sont rattachées à ce bloc.",
+        )
+    has_wells = (await session.execute(
+        select(func.count()).select_from(Well).where(Well.block_id == block_id)
+    )).scalar_one()
+    if has_wells > 0:
+        raise HTTPException(
+            409,
+            f"Impossible de supprimer : {has_wells} puits sont rattachés à ce bloc.",
+        )
+    await session.delete(block)
 
 
 @router.get("/wells", response_model=list[WellResponse])
@@ -50,6 +121,76 @@ async def list_wells(
                      pump_type=w.pump_type, is_active=w.is_active)
         for w in rows
     ]
+
+
+@router.post("/wells", response_model=WellResponse, status_code=201)
+async def create_well(
+    body: WellCreate,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> WellResponse:
+    block = await session.get(Block, body.block_id)
+    if block is None:
+        raise HTTPException(404, "Bloc parent introuvable.")
+    existing = (await session.execute(
+        select(Well).where(Well.code == body.code)
+    )).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(409, f"Le puits '{body.code}' existe déjà.")
+    well = Well(
+        code=body.code, block_id=body.block_id,
+        pump_type=body.pump_type, is_active=body.is_active,
+    )
+    session.add(well)
+    await session.flush()
+    return WellResponse(id=well.id, code=well.code, block_id=well.block_id,
+                        pump_type=well.pump_type, is_active=well.is_active)
+
+
+@router.patch("/wells/{well_id}", response_model=WellResponse)
+async def update_well(
+    well_id: UUID,
+    body: WellUpdate,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> WellResponse:
+    well = await session.get(Well, well_id)
+    if well is None:
+        raise HTTPException(404, "Puits introuvable.")
+    if body.block_id is not None:
+        block = await session.get(Block, body.block_id)
+        if block is None:
+            raise HTTPException(404, "Bloc parent introuvable.")
+        well.block_id = body.block_id
+    if body.pump_type is not None:
+        well.pump_type = body.pump_type
+    if body.is_active is not None:
+        well.is_active = body.is_active
+    await session.flush()
+    return WellResponse(id=well.id, code=well.code, block_id=well.block_id,
+                        pump_type=well.pump_type, is_active=well.is_active)
+
+
+@router.delete("/wells/{well_id}", status_code=204)
+async def delete_well(
+    well_id: UUID,
+    _: Annotated[CurrentUser, Depends(require_permission("production:write"))],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    well = await session.get(Well, well_id)
+    if well is None:
+        raise HTTPException(404, "Puits introuvable.")
+    in_use = (await session.execute(
+        select(func.count()).select_from(DailyProduction).where(
+            DailyProduction.well_id == well_id
+        )
+    )).scalar_one()
+    if in_use > 0:
+        raise HTTPException(
+            409,
+            f"Impossible de supprimer : {in_use} ligne(s) de production référencent ce puits.",
+        )
+    await session.delete(well)
 
 
 @router.get("/daily")

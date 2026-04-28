@@ -144,6 +144,20 @@ CREATE UNIQUE INDEX ON auth.mfa_recovery_codes (user_id, code_hash);
 
 ## 3. Schéma `production`
 
+### Référentiel : blocs et puits
+
+Le bloc est l'entité racine de la production. Un bloc regroupe plusieurs puits.
+**Il n'y a pas de notion de "zone" supérieure** dans le modèle actuel — un bloc
+correspond directement à une zone géographique de production.
+
+CRUD complet exposé sous `/v1/production/blocks` et `/v1/production/wells`
+(voir [api-reference.md](api-reference.md#32-référentiels)). Les codes
+(`block.code`, `well.code`) sont **immuables** après création ; pour renommer
+un bloc, mettre à jour `name` via `PATCH`.
+
+Les contraintes d'intégrité empêchent la suppression d'un bloc/puits encore
+référencé par une ligne de production (HTTP 409).
+
 ### Tables
 
 ```sql

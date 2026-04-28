@@ -8,7 +8,6 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_state.dart';
 import '../../../core/widgets/loading_skeleton.dart';
-import '../../../core/widgets/section_header.dart';
 import '../data/models_repository.dart';
 
 final _repoProvider = Provider<ModelsRepository>(
@@ -19,6 +18,94 @@ final _modelsProvider = FutureProvider<List<Map<String, dynamic>>>(
   (ref) => ref.watch(_repoProvider).list(),
 );
 
+String _qualifier(double v) {
+  if (v >= 0.85) return 'Excellent';
+  if (v >= 0.70) return 'Correct';
+  if (v >= 0.50) return 'À améliorer';
+  return 'Faible';
+}
+
+/// Business-oriented descriptor for each model_type.
+class _UseCase {
+  const _UseCase({
+    required this.type,
+    required this.title,
+    required this.summary,
+    required this.inputs,
+    required this.output,
+    required this.icon,
+    required this.color,
+    required this.primaryMetricKey,
+    required this.primaryMetricLabel,
+  });
+
+  final String type;
+  final String title;
+  final String summary;
+  final List<String> inputs;
+  final String output;
+  final IconData icon;
+  final Color color;
+  final String primaryMetricKey;
+  final String primaryMetricLabel;
+
+  String qualityHint(double v) => _qualifier(v);
+}
+
+const _useCases = <_UseCase>[
+  _UseCase(
+    type: 'maintenance',
+    title: 'Maintenance prédictive',
+    summary:
+        'Anticipe les pannes de pompe à venir pour planifier les interventions au bon moment.',
+    inputs: [
+      'Production journalière d\'huile',
+      'Watercut',
+      'Nombre de puits actifs',
+      'Tendance et moyennes mobiles 7/30 j',
+    ],
+    output: 'Risque de panne dans les 7 jours (faible / moyen / élevé)',
+    icon: Icons.health_and_safety_rounded,
+    color: AppColors.dangerRed,
+    primaryMetricKey: 'accuracy',
+    primaryMetricLabel: 'Précision',
+  ),
+  _UseCase(
+    type: 'forecast',
+    title: 'Prévision de production',
+    summary:
+        'Projette la production d\'huile journalière sur 7 à 90 jours pour aider à la planification.',
+    inputs: [
+      'Historique de production (lag 1, 7 et 14 jours)',
+      'Moyennes mobiles 7 et 14 jours',
+      'Saisonnalité (mois, jour de semaine)',
+      'Watercut et puits actifs',
+    ],
+    output: 'Volume d\'huile prévu par jour (bbl) avec intervalle 95 %',
+    icon: Icons.timeline_rounded,
+    color: AppColors.petrolDeep,
+    primaryMetricKey: 'r2',
+    primaryMetricLabel: 'Qualité d\'ajustement (R²)',
+  ),
+  _UseCase(
+    type: 'water',
+    title: 'Optimisation injection eau',
+    summary:
+        'Recommande le débit d\'injection d\'eau qui maximise le rendement huile / eau.',
+    inputs: [
+      'Production huile et eau',
+      'Watercut et sa variation',
+      'Ratio eau/huile',
+      'Moyennes mobiles 7 et 30 j',
+    ],
+    output: 'Débit d\'injection recommandé et efficacité de balayage attendue',
+    icon: Icons.water_drop_rounded,
+    color: AppColors.tealAccent,
+    primaryMetricKey: 'r2',
+    primaryMetricLabel: 'Qualité d\'ajustement (R²)',
+  ),
+];
+
 class ModelsScreen extends ConsumerWidget {
   const ModelsScreen({super.key});
 
@@ -27,7 +114,7 @@ class ModelsScreen extends ConsumerWidget {
     final models = ref.watch(_modelsProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Modèles ML'),
+        title: const Text('Intelligence Artificielle'),
         actions: [
           IconButton(
             tooltip: 'Actualiser',
@@ -37,254 +124,127 @@ class ModelsScreen extends ConsumerWidget {
           const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showTrainSheet(context, ref),
-        icon: const Icon(Icons.fitness_center_rounded),
-        label: const Text('Entraîner'),
-      ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(_modelsProvider),
         child: models.when(
           loading: () => ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: 4,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (_, _) => const Skeleton(height: 110, radius: 16),
+            padding: const EdgeInsets.all(20),
+            itemCount: 3,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (_, _) => const Skeleton(height: 220, radius: 16),
           ),
-          error: (e, _) =>
-              ErrorState(error: e, onRetry: () => ref.invalidate(_modelsProvider)),
-          data: (rows) {
-            if (rows.isEmpty) {
-              return EmptyState(
-                icon: Icons.precision_manufacturing_outlined,
-                title: 'Aucun modèle entraîné',
-                subtitle: 'Lance un entraînement avec le bouton ci-dessous.',
-                action: FilledButton.icon(
-                  onPressed: () => _showTrainSheet(context, ref),
-                  icon: const Icon(Icons.fitness_center_rounded),
-                  label: const Text('Démarrer un entraînement'),
+          error: (e, _) => ErrorState(
+              error: e, onRetry: () => ref.invalidate(_modelsProvider)),
+          data: (rows) => ListView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            children: [
+              const _IntroBanner(),
+              const SizedBox(height: 16),
+              for (final uc in _useCases) ...[
+                _UseCaseCard(
+                  useCase: uc,
+                  models: rows
+                      .where((r) =>
+                          (r['model_type']?.toString() ?? '') == uc.type)
+                      .toList(),
+                  onTrain: () => _showTrainSheet(context, ref, uc),
+                  onActivate: (id) => _activate(context, ref, id),
                 ),
-              );
-            }
-            // Group by model_type
-            final byType = <String, List<Map<String, dynamic>>>{};
-            for (final r in rows) {
-              final t = (r['model_type'] ?? 'autre').toString();
-              byType.putIfAbsent(t, () => []).add(r);
-            }
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              children: [
-                for (final entry in byType.entries) ...[
-                  SectionHeader(
-                    title: _typeLabel(entry.key),
-                    subtitle: '${entry.value.length} version(s)',
-                  ),
-                  ...entry.value.map((r) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _ModelCard(
-                          row: r,
-                          onActivate: () async {
-                            try {
-                              await ref
-                                  .read(_repoProvider)
-                                  .activate(r['id'].toString());
-                              ref.invalidate(_modelsProvider);
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Modèle activé'),
-                                ),
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(prettyError(e))),
-                              );
-                            }
-                          },
-                        ),
-                      )),
-                  const SizedBox(height: 8),
-                ],
+                const SizedBox(height: 14),
               ],
-            );
-          },
+              if (rows.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: EmptyState(
+                    icon: Icons.precision_manufacturing_outlined,
+                    title: 'Aucun modèle entraîné',
+                    subtitle:
+                        'Lance le premier entraînement depuis une carte ci-dessus.',
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  String _typeLabel(String t) => switch (t) {
-        'maintenance' => 'Maintenance prédictive',
-        'forecast' => 'Prévision de production',
-        'water' || 'water_injection' => 'Optimisation injection eau',
-        _ => t,
-      };
+  Future<void> _activate(BuildContext context, WidgetRef ref, String id) async {
+    try {
+      await ref.read(_repoProvider).activate(id);
+      ref.invalidate(_modelsProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Modèle activé')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(prettyError(e))),
+      );
+    }
+  }
 
-  void _showTrainSheet(BuildContext context, WidgetRef ref) {
+  void _showTrainSheet(BuildContext context, WidgetRef ref, _UseCase uc) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const _TrainSheet(),
+      builder: (_) => _TrainSheet(useCase: uc, repoProvider: _repoProvider, modelsProvider: _modelsProvider),
     );
   }
 }
 
-class _ModelCard extends StatelessWidget {
-  const _ModelCard({required this.row, required this.onActivate});
-  final Map<String, dynamic> row;
-  final VoidCallback onActivate;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isActive = row['is_active'] == true;
-    final metrics = (row['metrics'] as Map?) ?? const {};
-    final algo = row['algorithm']?.toString() ?? '—';
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            row['name']?.toString() ?? '—',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              row['version']?.toString() ?? '',
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '$algo · entraîné ${fmtDate(row['trained_at'])}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isActive)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.goodGreen.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.check_circle_rounded,
-                            size: 14, color: AppColors.goodGreen),
-                        SizedBox(width: 4),
-                        Text(
-                          'ACTIF',
-                          style: TextStyle(
-                            color: AppColors.goodGreen,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 11,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  TextButton(
-                    onPressed: onActivate,
-                    child: const Text('Activer'),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 6,
-              children: [
-                for (final entry in metrics.entries)
-                  _MetricChip(
-                    label: entry.key.toString(),
-                    value: _fmtMetric(entry.value),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _fmtMetric(dynamic v) {
-    if (v is num) {
-      final abs = v.abs();
-      if (abs > 100) return v.toStringAsFixed(1);
-      if (abs >= 1) return v.toStringAsFixed(3);
-      return v.toStringAsFixed(4);
-    }
-    return v.toString();
-  }
-}
-
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({required this.label, required this.value});
-  final String label;
-  final String value;
+class _IntroBanner extends StatelessWidget {
+  const _IntroBanner();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.petrolDeep.withValues(alpha: 0.10),
+            AppColors.tealAccent.withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: scheme.onSurfaceVariant,
-              letterSpacing: 0.6,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.petrolDeep.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: const Icon(Icons.auto_awesome_rounded,
+                color: AppColors.petrolDeep, size: 24),
           ),
-          const SizedBox(width: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trois modèles d\'IA au service de la production',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Chaque modèle apprend à partir de l\'historique réel des puits du Tchad. '
+                  'Tu peux le réentraîner à tout moment quand de nouvelles données sont disponibles.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -293,15 +253,509 @@ class _MetricChip extends StatelessWidget {
   }
 }
 
+class _UseCaseCard extends StatefulWidget {
+  const _UseCaseCard({
+    required this.useCase,
+    required this.models,
+    required this.onTrain,
+    required this.onActivate,
+  });
+  final _UseCase useCase;
+  final List<Map<String, dynamic>> models;
+  final VoidCallback onTrain;
+  final void Function(String modelId) onActivate;
+
+  @override
+  State<_UseCaseCard> createState() => _UseCaseCardState();
+}
+
+class _UseCaseCardState extends State<_UseCaseCard> {
+  bool _showTechnical = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final uc = widget.useCase;
+    final scheme = Theme.of(context).colorScheme;
+    final activeModel = widget.models
+        .where((m) => m['is_active'] == true)
+        .cast<Map<String, dynamic>?>()
+        .firstWhere((_) => true, orElse: () => null);
+
+    final score = activeModel == null
+        ? null
+        : (((activeModel['metrics'] as Map?)?[uc.primaryMetricKey] as num?)
+            ?.toDouble());
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: uc.color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(uc.icon, size: 26, color: uc.color),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        uc.title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        uc.summary,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            // Quality + state
+            Row(
+              children: [
+                Expanded(
+                  child: _StatusPill(
+                    activeModel: activeModel,
+                    color: uc.color,
+                  ),
+                ),
+                if (score != null) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _ScoreCard(
+                      label: uc.primaryMetricLabel,
+                      value: score,
+                      qualifier: uc.qualityHint(score),
+                      color: uc.color,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 18),
+            _TwoColRow(
+              left: _BulletList(
+                title: 'Données utilisées',
+                icon: Icons.data_usage_rounded,
+                items: uc.inputs,
+              ),
+              right: _BulletList(
+                title: 'Ce qu\'il prédit',
+                icon: Icons.auto_graph_rounded,
+                items: [uc.output],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: widget.onTrain,
+                  icon: const Icon(Icons.fitness_center_rounded),
+                  label: Text(activeModel == null
+                      ? 'Entraîner'
+                      : 'Réentraîner'),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: widget.models.isEmpty
+                      ? null
+                      : () => setState(() => _showTechnical = !_showTechnical),
+                  icon: Icon(_showTechnical
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded),
+                  label: Text(_showTechnical
+                      ? 'Masquer les détails'
+                      : 'Détails techniques'),
+                ),
+              ],
+            ),
+            if (_showTechnical && widget.models.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              for (final m in widget.models)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _TechnicalRow(
+                    model: m,
+                    onActivate: () => widget.onActivate(m['id'].toString()),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TwoColRow extends StatelessWidget {
+  const _TwoColRow({required this.left, required this.right});
+  final Widget left;
+  final Widget right;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (ctx, c) {
+        if (c.maxWidth < 480) {
+          return Column(children: [left, const SizedBox(height: 14), right]);
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: left),
+            const SizedBox(width: 16),
+            Expanded(child: right),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.activeModel, required this.color});
+  final Map<String, dynamic>? activeModel;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isActive = activeModel != null;
+    final label = isActive ? 'Modèle actif' : 'Pas encore entraîné';
+    final subtitle = isActive
+        ? 'Version ${activeModel!['version'] ?? '—'} · ${fmtDate(activeModel!['trained_at'])}'
+        : 'Lance un entraînement pour activer.';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppColors.goodGreen.withValues(alpha: 0.10)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(
+          color: isActive
+              ? AppColors.goodGreen.withValues(alpha: 0.4)
+              : scheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isActive
+                    ? Icons.check_circle_rounded
+                    : Icons.pending_actions_rounded,
+                color: isActive ? AppColors.goodGreen : scheme.outline,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: isActive ? AppColors.goodGreen : scheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScoreCard extends StatelessWidget {
+  const _ScoreCard({
+    required this.label,
+    required this.value,
+    required this.qualifier,
+    required this.color,
+  });
+  final String label;
+  final double value;
+  final String qualifier;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final pct = (value.clamp(0, 1) * 100).toStringAsFixed(0);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                pct,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '%',
+                  style: TextStyle(
+                    color: color, fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  qualifier,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BulletList extends StatelessWidget {
+  const _BulletList({
+    required this.title,
+    required this.icon,
+    required this.items,
+  });
+  final String title;
+  final IconData icon;
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: scheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: scheme.primary,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, right: 8),
+                  child: Container(
+                    width: 4, height: 4,
+                    decoration: BoxDecoration(
+                      color: scheme.onSurfaceVariant,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    item,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TechnicalRow extends StatelessWidget {
+  const _TechnicalRow({required this.model, required this.onActivate});
+  final Map<String, dynamic> model;
+  final VoidCallback onActivate;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isActive = model['is_active'] == true;
+    final metrics = (model['metrics'] as Map?) ?? const {};
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      model['version']?.toString() ?? '—',
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '· ${model['algorithm'] ?? '—'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    Text(
+                      '· ${fmtDate(model['trained_at'])}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isActive)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.goodGreen.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'ACTIF',
+                    style: TextStyle(
+                      color: AppColors.goodGreen,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
+                    ),
+                  ),
+                )
+              else
+                TextButton(
+                  onPressed: onActivate,
+                  child: const Text('Activer'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final entry in metrics.entries)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${entry.key}: ${_fmtMetric(entry.value)}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtMetric(dynamic v) {
+    if (v is num) {
+      if (v.abs() > 100) return v.toStringAsFixed(1);
+      if (v.abs() >= 1) return v.toStringAsFixed(3);
+      return v.toStringAsFixed(4);
+    }
+    return v.toString();
+  }
+}
+
 class _TrainSheet extends ConsumerStatefulWidget {
-  const _TrainSheet();
+  const _TrainSheet({
+    required this.useCase,
+    required this.repoProvider,
+    required this.modelsProvider,
+  });
+  final _UseCase useCase;
+  final Provider<ModelsRepository> repoProvider;
+  final FutureProvider<List<Map<String, dynamic>>> modelsProvider;
 
   @override
   ConsumerState<_TrainSheet> createState() => _TrainSheetState();
 }
 
 class _TrainSheetState extends ConsumerState<_TrainSheet> {
-  String _modelType = 'forecast';
   String _algo = 'gradient_boosting';
   bool _submitting = false;
   String? _jobStatus;
@@ -309,14 +763,14 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
   Future<void> _submit() async {
     setState(() {
       _submitting = true;
-      _jobStatus = null;
+      _jobStatus = 'queued';
     });
     try {
-      final repo = ref.read(_repoProvider);
-      final jobId =
-          await repo.startTraining(modelType: _modelType, algorithm: _algo);
-
-      // Poll up to 5 min
+      final repo = ref.read(widget.repoProvider);
+      final jobId = await repo.startTraining(
+        modelType: widget.useCase.type,
+        algorithm: _algo,
+      );
       for (var i = 0; i < 100; i++) {
         await Future<void>.delayed(const Duration(seconds: 3));
         final job = await repo.getJob(jobId);
@@ -324,14 +778,13 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
         if (mounted) setState(() => _jobStatus = status);
         if (status == 'success' || status == 'failed') break;
       }
-
-      ref.invalidate(_modelsProvider);
+      ref.invalidate(widget.modelsProvider);
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_jobStatus == 'success'
-              ? 'Entraînement terminé avec succès'
+              ? 'Entraînement terminé : nouveau modèle activé.'
               : 'Entraînement terminé : $_jobStatus'),
         ),
       );
@@ -348,6 +801,8 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final uc = widget.useCase;
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -360,54 +815,89 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Démarrer un entraînement',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _modelType,
-              decoration: const InputDecoration(
-                labelText: 'Type de modèle',
-                prefixIcon: Icon(Icons.model_training_rounded),
-              ),
-              items: const [
-                DropdownMenuItem(
-                    value: 'forecast', child: Text('Prévision de production')),
-                DropdownMenuItem(
-                    value: 'maintenance', child: Text('Maintenance prédictive')),
-                DropdownMenuItem(
-                    value: 'water', child: Text('Optimisation injection eau')),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: uc.color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(uc.icon, color: uc.color),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Entraîner « ${uc.title} »',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        uc.summary,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
-              onChanged: _submitting
-                  ? null
-                  : (v) => setState(() => _modelType = v ?? 'forecast'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(AppRadii.md),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Le modèle sera entraîné sur l\'intégralité des '
+                      'données disponibles, puis activé automatiquement '
+                      'à la fin si l\'apprentissage réussit.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               initialValue: _algo,
               decoration: const InputDecoration(
                 labelText: 'Algorithme',
+                helperText:
+                    'Gradient Boosting est recommandé pour la plupart des cas.',
                 prefixIcon: Icon(Icons.psychology_alt_rounded),
               ),
               items: const [
                 DropdownMenuItem(
                     value: 'gradient_boosting',
-                    child: Text('Gradient Boosting')),
+                    child: Text('Gradient Boosting (recommandé)')),
                 DropdownMenuItem(
-                    value: 'random_forest', child: Text('Random Forest')),
-                DropdownMenuItem(value: 'xgboost', child: Text('XGBoost')),
+                    value: 'random_forest',
+                    child: Text('Random Forest (plus rapide)')),
+                DropdownMenuItem(
+                    value: 'xgboost',
+                    child: Text('XGBoost (plus précis, plus lent)')),
               ],
               onChanged: _submitting
                   ? null
@@ -427,10 +917,16 @@ class _TrainSheetState extends ConsumerState<_TrainSheet> {
                     )
                   : const Icon(Icons.fitness_center_rounded),
               label: Text(_submitting
-                  ? (_jobStatus == null
-                      ? 'Démarrage…'
-                      : 'Statut : $_jobStatus')
-                  : 'Lancer l\'entraînement'),
+                  ? 'Entraînement en cours${_jobStatus != null ? " · $_jobStatus" : ""}…'
+                  : 'Démarrer l\'entraînement'),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'L\'entraînement prend généralement entre 5 et 30 secondes.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme.dart';
+import '../../about/presentation/about_screen.dart';
+import '../../configuration/presentation/configuration_screen.dart';
 import '../../dashboard/presentation/dashboard_screen.dart';
 import '../../forecast/presentation/forecast_screen.dart';
 import '../../maintenance/presentation/maintenance_screen.dart';
@@ -30,8 +32,9 @@ const _navItems = <_NavItem>[
   _NavItem(Icons.build_outlined, Icons.build_rounded, 'Maintenance'),
   _NavItem(Icons.timeline_outlined, Icons.timeline_rounded, 'Prévision'),
   _NavItem(Icons.water_drop_outlined, Icons.water_drop_rounded, 'Injection'),
-  _NavItem(Icons.precision_manufacturing_outlined,
-      Icons.precision_manufacturing_rounded, 'Modèles'),
+  _NavItem(Icons.auto_awesome_outlined, Icons.auto_awesome_rounded, 'IA'),
+  _NavItem(Icons.tune_outlined, Icons.tune_rounded, 'Configuration'),
+  _NavItem(Icons.info_outline_rounded, Icons.info_rounded, 'À propos'),
 ];
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
@@ -44,6 +47,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ForecastScreen(),
     WaterScreen(),
     ModelsScreen(),
+    ConfigurationScreen(),
+    AboutScreen(),
   ];
 
   @override

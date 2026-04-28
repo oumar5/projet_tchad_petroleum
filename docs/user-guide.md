@@ -1,8 +1,54 @@
-# 📖 Guide d'Utilisation - Tchad Petroleum
+# 📖 Guide d'Utilisation - SmartBarrel (Tchad Petroleum)
 
 ## Vue d'Ensemble
 
-Ce guide détaille l'utilisation complète du système de modélisation prédictive de Tchad Petroleum Company, destiné aux utilisateurs finaux.
+Ce guide détaille l'utilisation complète de SmartBarrel, la plateforme de modélisation prédictive de Tchad Petroleum Company, destiné aux utilisateurs finaux.
+
+> ℹ️ La v3 (Flutter + microservices) remplace la v2 Streamlit. Les sections
+> ci-dessous référençant Streamlit/`localhost:8501` concernent la v2 historique
+> et seront retirées progressivement. Pour l'application v3, l'URL par défaut
+> en dev est `http://api.localhost` (gateway Traefik).
+
+---
+
+## 🆕 Nouveautés v3 — gestion des blocs/puits et IA
+
+### Configuration (Blocs & Puits)
+
+L'écran **Configuration** dans la barre latérale permet de gérer les blocs et
+les puits sans passer par la base de données.
+
+- **Onglet Blocs** : Créer / renommer / supprimer un bloc. Le code (`X`, `Y`,
+  `NORD-1`…) est défini à la création et reste immuable. Un bloc référencé par
+  des données de production ne peut pas être supprimé.
+- **Onglet Puits** : Ajouter un puits sous un bloc parent (sélection par
+  drop-down). Le type de pompe est libre (`ESP`, `Beam`, `Rod`…). Le toggle
+  "Puits actif" désactive sans supprimer.
+
+Permission requise : `production:write` (rôles **engineer** et **admin**).
+
+### Intelligence Artificielle (3 modèles)
+
+L'écran **IA** présente trois cas d'usage métier — chacun est une carte
+pédagogique avec :
+
+1. **Maintenance prédictive** — anticipe les pannes de pompe sur 7 jours.
+   Métrique principale : précision (accuracy).
+2. **Prévision de production** — projette la production journalière sur 7 à
+   90 jours. Métrique principale : R² (qualité d'ajustement).
+3. **Optimisation injection eau** — recommande le débit d'injection optimal.
+   Métrique principale : R².
+
+Pour chaque cas : bouton **Entraîner** (ou Réentraîner) qui ouvre une feuille
+modale, sélection de l'algorithme (Gradient Boosting recommandé, Random Forest
+plus rapide, XGBoost plus précis), et un panneau "Détails techniques" repliable
+qui montre toutes les versions et leurs métriques brutes.
+
+Le modèle nouvellement entraîné devient automatiquement actif si
+l'apprentissage réussit. Les prédictions des autres écrans (Prévision,
+Maintenance, Injection) utilisent toujours le modèle marqué comme actif.
+
+---
 
 ## 🎯 Public Cible
 

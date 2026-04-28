@@ -200,11 +200,42 @@ Permission : `production:write`
 
 ### 3.2 Référentiels
 
+#### Blocs
+
 ```
-GET /v1/production/wells
-GET /v1/production/blocks
+GET    /v1/production/blocks                — liste                  (production:read)
+POST   /v1/production/blocks                — créer                  (production:write)
+PATCH  /v1/production/blocks/{block_id}     — modifier name/desc.    (production:write)
+DELETE /v1/production/blocks/{block_id}     — supprimer (si vide)    (production:write)
 ```
-Permission : `production:read`
+
+`POST /v1/production/blocks` body :
+```json
+{ "code": "NORD-1", "name": "Bloc Nord 1", "description": "facultatif" }
+```
+- `code` est unique et **non modifiable** après création.
+- `DELETE` retourne `409` si des puits ou des lignes de production sont rattachés au bloc.
+
+#### Puits
+
+```
+GET    /v1/production/wells?block=X         — liste (filtre optionnel) (production:read)
+POST   /v1/production/wells                 — créer                    (production:write)
+PATCH  /v1/production/wells/{well_id}       — modifier                 (production:write)
+DELETE /v1/production/wells/{well_id}       — supprimer (si vide)      (production:write)
+```
+
+`POST /v1/production/wells` body :
+```json
+{
+  "code": "X-01",
+  "block_id": "800ce8c5-b79c-4aad-841d-1f2d0d3dca10",
+  "pump_type": "ESP",
+  "is_active": true
+}
+```
+- `code` est unique et **non modifiable** après création.
+- `DELETE` retourne `409` si des lignes de production référencent ce puits.
 
 ### 3.3 KPIs
 

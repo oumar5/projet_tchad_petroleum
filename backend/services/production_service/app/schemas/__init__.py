@@ -11,12 +11,36 @@ class BlockResponse(BaseModel):
     description: str | None
 
 
+class BlockCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+
+
+class BlockUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+
+
 class WellResponse(BaseModel):
     id: UUID
     code: str
     block_id: UUID
     pump_type: str | None
     is_active: bool
+
+
+class WellCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    block_id: UUID
+    pump_type: str | None = None
+    is_active: bool = True
+
+
+class WellUpdate(BaseModel):
+    block_id: UUID | None = None
+    pump_type: str | None = None
+    is_active: bool | None = None
 
 
 class DailyProductionCreate(BaseModel):
