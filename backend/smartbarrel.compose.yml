@@ -156,6 +156,8 @@ services:
     volumes:
       - ./infra/jwt:/etc/jwt:ro
       - ../data:/app/data:ro
+    tmpfs:
+      - /tmp/etl_uploads
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }

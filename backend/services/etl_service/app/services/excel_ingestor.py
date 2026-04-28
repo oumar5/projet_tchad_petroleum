@@ -61,8 +61,13 @@ async def ingest_excel(
     digest = file_sha256(file_path)
     df_prod = read_production_sheet(file_path)
 
-    validation = validate_production_df(df_prod)
-    if strict_validation and not validation.success:
+    try:
+        validation = validate_production_df(df_prod)
+    except Exception:
+        if strict_validation:
+            raise
+        validation = None
+    if strict_validation and validation is not None and not validation.success:
         raise ValueError(
             f"Data validation failed: {validation.failed_expectations}"
         )
@@ -87,24 +92,33 @@ async def ingest_excel(
         try:
             wells_total = int(row["Nombre total des puits"]) if pd.notna(row["Nombre total des puits"]) else 0
             wells_active = int(row["Nombre des puits actifs"]) if pd.notna(row["Nombre des puits actifs"]) else 0
-            oil = float(row["Production journaliere d'huile bbl"] or 0)
-            water = float(row["Production journaliere d'eau bbl"] or 0)
+            oil = max(float(row["Production journaliere d'huile bbl"] or 0), 0.0)
+            water = max(float(row["Production journaliere d'eau bbl"] or 0), 0.0)
             wc = float(row["Teneur en eau (Watercut)"] or 0)
-            if wc > 100:
-                wc = 100
+            # Excel parfois stocke watercut en fraction (0-1) au lieu de %
+            if 0 < wc <= 1:
+                wc = wc * 100
+            wc = min(max(wc, 0.0), 100.0)
             wor = water / oil if oil > 0 else None
 
-            result = await session.execute(text("""
-                INSERT INTO production.daily_production
-                    (date, block_id, wells_total, wells_active,
-                     oil_bbl, water_bbl, watercut_pct, wor, source)
-                VALUES (:date, :block_id, :wt, :wa, :oil, :water, :wc, :wor, 'excel_import')
-                ON CONFLICT (date, block_id, well_id) DO NOTHING
-            """), {
-                "date": row["Date"].date(), "block_id": block_id,
-                "wt": wells_total, "wa": wells_active,
-                "oil": oil, "water": water, "wc": wc, "wor": wor,
-            })
+            sp = await session.begin_nested()
+            try:
+                result = await session.execute(text("""
+                    INSERT INTO production.daily_production
+                        (date, block_id, wells_total, wells_active,
+                         oil_bbl, water_bbl, watercut_pct, wor, source)
+                    VALUES (:date, :block_id, :wt, :wa, :oil, :water, :wc, :wor, 'excel_import')
+                    ON CONFLICT (date, block_id, well_id) DO NOTHING
+                """), {
+                    "date": row["Date"].date(), "block_id": block_id,
+                    "wt": wells_total, "wa": wells_active,
+                    "oil": oil, "water": water, "wc": wc, "wor": wor,
+                })
+                await sp.commit()
+            except Exception:
+                await sp.rollback()
+                raise
+
             if result.rowcount == 0:
                 rows_skipped += 1
             else:

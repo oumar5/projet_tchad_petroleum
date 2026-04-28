@@ -3,7 +3,7 @@ from shared.config import BaseServiceSettings
 
 class EtlSettings(BaseServiceSettings):
     service_name: str = "etl-service"
-    upload_dir: str = "/app/data/uploads"
+    upload_dir: str = "/tmp/etl_uploads"
 
 
 _settings: EtlSettings | None = None

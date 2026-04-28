@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down dev-logs jwt-keys migrate test lint
+.PHONY: help dev-up dev-down dev-logs jwt-keys migrate test lint seed-users seed-data seed-all
 
 SERVICES := auth_service production_service maintenance_service ml_service etl_service notification_service
 
@@ -11,6 +11,9 @@ help:
 	@echo "  migrate        Run alembic upgrade head on all services"
 	@echo "  test           Run pytest in all services"
 	@echo "  lint           Ruff + black check"
+	@echo "  seed-users     Create the 4 dev RBAC accounts"
+	@echo "  seed-data      Ingest data/Données de production Rev.xlsx"
+	@echo "  seed-all       seed-users + seed-data"
 
 jwt-keys:
 	@mkdir -p infra/jwt
@@ -47,3 +50,11 @@ test:
 lint:
 	ruff check shared services
 	black --check shared services
+
+seed-users:
+	bash infra/scripts/seed-dev-users.sh
+
+seed-data:
+	bash infra/scripts/seed-prod-data.sh
+
+seed-all: seed-users seed-data
