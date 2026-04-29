@@ -5,7 +5,7 @@
 >
 > Légende : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[!]` bloqué
 
-**Dernière mise à jour** : 2026-04-26
+**Dernière mise à jour** : 2026-04-28
 **Branche active** : `main`
 **Version courante** : v2 (Streamlit) — Cible : v3 (SmartBarrel microservices)
 
@@ -20,8 +20,9 @@
 5. [Phase 3 — ML & Async](#5-phase-3--ml--async-6-sem)
 6. [Phase 4 — Frontend Flutter](#6-phase-4--frontend-flutter-8-sem)
 7. [Phase 5 — Industrialisation](#7-phase-5--industrialisation-4-sem)
-8. [Backlog transverse](#8-backlog-transverse)
-9. [Risques à surveiller](#9-risques-à-surveiller)
+8. [Sprints ouverts (post-2026-04-28)](#10-sprints-ouverts-post-2026-04-28)
+9. [Backlog transverse](#8-backlog-transverse)
+10. [Risques à surveiller](#9-risques-à-surveiller)
 
 ---
 
@@ -122,6 +123,7 @@
 - [x] Idempotence via `ON CONFLICT (date, block_id, well_id) DO NOTHING`
 - [x] Tracking dans `etl.runs` + `etl.snapshots` avec hash SHA-256
 - [x] Endpoints `/v1/etl/ingest/excel`, `/v1/etl/runs`, `/v1/etl/runs/{id}`
+- [!] **Couverture incomplète** : ingère seulement 1/9 onglets du fichier réel (audit 2026-04-28). Voir §10 ETL Excel sprint 1-3.
 
 ### 3.5 Boilerplate Flutter ([`frontend/`](frontend/))
 
@@ -223,6 +225,87 @@
 
 ---
 
+## 10. Sprints ouverts (post-2026-04-28)
+
+> Travaux décidés après audit complet du 2026-04-28 (cycle persistence/maintenance/storage/etl).
+
+### 10.1 Persistance frontend renforcée — ✅ livré 2026-04-28
+
+- [x] `OfflineCache` v2 : schema versioning + TTL fresh/maxAge + helper générique `cached<T>()` ([`offline_cache.dart`](frontend/lib/core/offline/offline_cache.dart))
+- [x] Cache étendue à 6 repositories (dashboard, production, zones, blocks, wells, maintenance failures, maintenance interventions, ml models)
+- [x] Banner global hors-ligne agrégeant tous les statuts ([`cache_status.dart`](frontend/lib/core/offline/cache_status.dart) + intégré dans [`home_screen.dart`](frontend/lib/features/auth/presentation/home_screen.dart))
+- [x] Persistance des sélections `selectedZoneProvider` / `selectedBlockProvider` via Hive ([`blocks_providers.dart`](frontend/lib/core/providers/blocks_providers.dart))
+
+### 10.2 Workflow maintenance complet — ✅ livré 2026-04-28
+
+- [x] Migration `0002_failure_workflow` : `failures.status` (enum), `assigned_to`, `well_code`, `last_updated_by` + table `attachments` ([`backend/services/maintenance_service/alembic/versions/0002_failure_workflow.py`](backend/services/maintenance_service/alembic/versions/0002_failure_workflow.py))
+- [x] Endpoints PATCH failures + interventions, attachments multipart (10 MB, MIME whitelist), download streaming
+- [x] Publication RabbitMQ `alert.failure_reported` (severity high/critical) + `failure.status_changed`
+- [x] Frontend : FAB "Déclarer une panne" + dialog complet (zone/bloc cascadés, puits, type, sévérité, durée, description), menu contextuel (résoudre/rouvrir/photo/intervention), dialog intervention, FAB "Nouvelle intervention" ([`maintenance_screen.dart`](frontend/lib/features/maintenance/presentation/maintenance_screen.dart))
+- [x] Frontend : repository étendu (`updateFailure`, `createIntervention`, `updateIntervention`, `uploadFailureAttachment`, `listFailureAttachments`)
+- [x] StatusChip coloré (pending/in_progress/resolved/cancelled) sur chaque card
+
+### 10.3 Stockage objet MinIO — ✅ livré 2026-04-28
+
+- [x] Service `minio` + `minio-bootstrap` (mc) dans le compose, buckets `smartbarrel-attachments` + `smartbarrel-ml-models` créés au démarrage ([`smartbarrel.compose.yml`](backend/smartbarrel.compose.yml))
+- [x] Abstraction `StorageBackend` avec `LocalDiskStorage` + `S3Storage` ([`shared/storage/backend.py`](backend/shared/storage/backend.py))
+- [x] `boto3==1.35.49` ajouté à `shared/requirements.txt`
+- [x] maintenance-service branché : `app.state.storage` via factory `build_storage()`, switch `STORAGE_BACKEND=local|s3` dans `.env`
+- [x] Smoke test e2e validé : POST attachment 201 → `mc ls` confirme objet → GET download 200 bytes identiques
+- [ ] ml-service : migrer `app/models` (joblib) du volume Docker vers MinIO bucket `smartbarrel-ml-models` *(prochain chantier)*
+- [ ] backups Postgres : pointer vers MinIO local en dev (au lieu d'AWS S3) pour tester le flow `backup-postgres.sh`
+
+### 10.4 ETL Excel — couverture multi-onglets — 🚧 à livrer
+
+> Audit 2026-04-28 : le fichier `data/Données de production Rev.xlsx` contient **9 onglets** dont seul `Prod YOM BlocsFaillés X, Y et Z` est ingéré. Les 8 autres (Pression, Injection eau, Pannes, Interventions, Stimulation, CAPEX, Arrêts puits, Phase forage) sont silencieusement ignorés. Granularité minute/seconde non supportée par le schéma actuel.
+
+#### Sprint 1 — Inspection auto (P0, 2-3 j)
+
+- [ ] Endpoint `POST /v1/etl/inspect/excel` (analyse seule, ne touche pas la BDD) → retourne par onglet : `name`, `rows`, `detected_kind`, `header_row`, `columns`, `preview` (3 lignes), `target_table`, `warnings`, `ready` (bool)
+- [ ] Détection par signature de colonnes (regex/set d'entêtes) pour chaque type connu (daily_production, well_pressure, water_injection, failures, interventions, stimulation, capex, downtime)
+- [ ] Frontend : wizard upload Excel à 2 étapes — étape 1 = tableau des onglets détectés avec icônes ✅/⚠️/❌, étape 2 = checkboxes + confirmation ([`production_screen.dart`](frontend/lib/features/production/presentation/production_screen.dart) `_ExcelImportDialog` à étendre)
+- [ ] Endpoint `POST /v1/etl/ingest/excel/selective` qui prend un body `{snapshot_id, sheets: [...]}` et ingère uniquement les onglets cochés (savepoint isolé par onglet)
+- [ ] Stocker le fichier Excel uploadé dans MinIO bucket `smartbarrel-imports` pour permettre le replay
+
+#### Sprint 2 — Tables manquantes + ingestors (P0, 3-4 j)
+
+- [ ] Migration alembic `production.well_pressure` (well_code, measured_at TIMESTAMPTZ, pressure_psi, reservoir_segment, UNIQUE(well_code, measured_at))
+- [ ] Migration alembic `production.water_injection` (date, injector_code, volume_kbj, reservoir_zones, UNIQUE(date, injector_code))
+- [ ] Migration alembic `maintenance.stimulation_jobs` (well_code, operation, job_end TIMESTAMPTZ, fluid, segment, block, UNIQUE(well_code, job_end, operation))
+- [ ] Migration alembic `maintenance.well_capex_jobs` (well_code, activity_type, operation, job_end TIMESTAMPTZ, description, segment, block, UNIQUE(well_code, job_end, operation))
+- [ ] Migration alembic `maintenance.well_downtime` (well_code, start_date TIMESTAMPTZ, end_date, category, segment, block, UNIQUE(well_code, start_date))
+- [ ] Refacto `excel_ingestor.py` : registry de `SheetIngestor` (1 par onglet), pattern `detect(headers) -> bool` + `ingest(df, session) -> SheetResult`
+- [ ] Ingestor `failures` (Historiq Pannes pompes → maintenance.failures, mapping `Bloc Faillé → block`, `Well → well_code`)
+- [ ] Ingestor `interventions` (Repartion pompes → maintenance.interventions, `Job End` → `intervention_date` timestamp)
+- [ ] Ingestor `well_pressure` (parser format wide multi-puits, unpivot 4 puits côte à côte → time-series long format)
+- [ ] Ingestor `water_injection` (Excel wide format avec 1 colonne par injecteur → unpivot)
+- [ ] Ingestor `stimulation` (Stimulation → stimulation_jobs)
+- [ ] Ingestor `capex` (Autres travaux sur puits → well_capex_jobs)
+- [ ] Ingestor `downtime` (Puits à l'arret et causes → well_downtime)
+
+#### Sprint 3 — Polish (P1, 1-2 j)
+
+- [ ] Page "Imports" dans la sidebar Flutter : historique des `etl.runs`, drill-down par snapshot, statut par onglet, bouton "Réimporter onglets échoués"
+- [ ] Téléchargement du fichier source depuis MinIO (replay/audit)
+- [ ] Endpoint `GET /v1/etl/snapshots/{id}/sheets/{sheet}/preview` (debug)
+
+### 10.5 Notifications maintenance — 🚧 à livrer
+
+- [ ] notification-service : consumer `alert.failure_reported` → FCM aux rôles `engineer` + `admin` qui ont `failure_alerts=true`
+- [ ] notification-service : consumer `failure.status_changed` → email au `assigned_to` si défini
+- [ ] Frontend : écran "Mes alertes" dans la sidebar avec badge non-lus
+- [ ] Push notification → tap → ouvre la card de la panne concernée
+
+### 10.6 UX & complétude — 🚧 à livrer
+
+- [ ] Onboarding première connexion (tour guidé, données vides → CTA import Excel)
+- [ ] Saisie production **par puits** dans le dialog (en plus de bloc)
+- [ ] Détection doublon avant POST (pré-vérification 409)
+- [ ] Édition/suppression d'une saisie production existante
+- [ ] Mémorisation cross-session de la zone/bloc déjà persistée par §10.1, mais propagation entre tabs Maintenance et Injection à confirmer
+
+---
+
 ## 8. Backlog transverse
 
 ### Sécurité
@@ -276,3 +359,9 @@
 | 2026-04-26 | Claude | Frontend déplacé à la racine → `frontend/` (lib, android, ios, web, test, pubspec, .dart_tool, .idea, .metadata, .gitignore). `flutter clean && flutter pub get` validés depuis `frontend/` |
 | 2026-04-26 | Claude | Toutes les tâches Phase 1-3 fermées : Great Expectations (etl), cache Redis (production), pipelines ML training (sklearn+XGBoost), events RabbitMQ ML, FCM dispatch, docs-aggregator + Swagger UI, suite e2e httpx, GitHub Actions backend-ci. Frontend Flutter : Riverpod + Dio + go_router + login + interceptor + secure_storage + build web validé |
 | 2026-04-26 | Claude | Phase 4 (Flutter) : modules Dashboard/Production/Maintenance/Forecast/Water + bottom-nav + offline Hive + FCM registration. Phase 5 : K8s manifests complets (postgres, redis, rabbitmq, 7 services, ingress TLS, CronJob backup) + observabilité (Prometheus/Grafana/Loki/Tempo via observability.compose.yml) + scripts rotation JWT, backup pg, décommissionnement v2 + workflows GHA frontend-ci et release (build/push GHCR + deploy K8s) + coverage gate 70%. Backlog : SLOs formalisés docs/slo.md |
+| 2026-04-28 | Claude | Hiérarchie Zone→Bloc (migration `0002_add_zones`, sélecteur cascadé `ZoneBlockPicker`, 4 endpoints zones). Sidebar consolidée 8→7 entrées (Modèles IA top-level, Configuration en 3 tabs). Excel import UI dans Production. CORS/422 fix sur ml-service (handler `ValueError` global) |
+| 2026-04-28 | Claude | UX quick-wins : empty states pédagogiques avec CTA, `prettyError` partout (auth_controller fix), polling ML enrichi avec stepper visuel + barre progression + chrono temps réel + gestion d'échec |
+| 2026-04-28 | Claude | Persistance frontend renforcée (§10.1) : OfflineCache v2 avec TTL/schema versioning, helper `cached<T>()`, cache étendue à 6 repositories, banner global hors-ligne, persistance des sélections zone/bloc dans Hive |
+| 2026-04-28 | Claude | Workflow maintenance complet (§10.2) : migration `0002_failure_workflow` (status enum, assigned_to, well_code, attachments table), endpoints PATCH+attachments+download, events RabbitMQ `alert.failure_reported`/`failure.status_changed`, frontend FAB + dialogs + menu contextuel + StatusChip |
+| 2026-04-28 | Claude | Stockage objet (§10.3) : MinIO + bootstrap mc dans le compose, abstraction `StorageBackend` (Local/S3) dans `shared/storage`, maintenance-service migré sur S3 (boto3), smoke test e2e validé. À suivre : ml-service models + backups Postgres |
+| 2026-04-28 | Claude | Audit ETL Excel (§10.4) : couverture 1/9 onglets seulement. Sprint 1-3 planifiés (inspection auto, tables time-series manquantes, ingestors par onglet). 3.4 marqué `[!]` en attendant. Notifications maintenance + UX onboarding ouverts (§10.5/10.6) |

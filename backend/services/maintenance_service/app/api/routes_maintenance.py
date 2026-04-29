@@ -2,7 +2,6 @@ import contextlib
 import uuid as _uuid
 from datetime import date as Date
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -15,7 +14,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -312,15 +311,16 @@ async def _save_attachment(
     if len(raw) > _MAX_BYTES:
         raise HTTPException(413, "Fichier > 10 MB.")
 
-    base_dir = Path(request.app.state.attachments_dir)
-    parent_dir = base_dir / (
-        f"failures/{failure_id}" if failure_id else f"interventions/{intervention_id}"
-    )
-    parent_dir.mkdir(parents=True, exist_ok=True)
     safe_name = upload.filename or "upload"
     fid = _uuid.uuid4().hex[:8]
-    path = parent_dir / f"{fid}_{safe_name}"
-    path.write_bytes(raw)
+    parent = (
+        f"failures/{failure_id}" if failure_id
+        else f"interventions/{intervention_id}"
+    )
+    storage_key = f"{parent}/{fid}_{safe_name}"
+
+    storage = request.app.state.storage
+    storage.put(key=storage_key, data=raw, content_type=upload.content_type)
 
     a = Attachment(
         failure_id=failure_id,
@@ -328,7 +328,7 @@ async def _save_attachment(
         filename=safe_name,
         mime_type=upload.content_type,
         size_bytes=len(raw),
-        storage_path=str(path),
+        storage_path=storage_key,
         uploaded_by=UUID(user.id),
     )
     session.add(a)
@@ -377,17 +377,37 @@ async def list_failure_attachments(
 async def download_attachment(
     attachment_id: UUID,
     _: Annotated[CurrentUser, Depends(require_permission("maintenance:read"))],
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
-) -> FileResponse:
+) -> StreamingResponse:
     a = await session.get(Attachment, attachment_id)
     if a is None:
         raise HTTPException(404, "Attachment not found")
-    if not Path(a.storage_path).exists():
+
+    storage = request.app.state.storage
+    if not storage.exists(a.storage_path):
         raise HTTPException(410, "Fichier supprimé du stockage.")
-    return FileResponse(
-        a.storage_path,
+
+    def _iter():
+        body = storage.open(a.storage_path)
+        try:
+            while True:
+                chunk = body.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+
+    return StreamingResponse(
+        _iter(),
         media_type=a.mime_type,
-        filename=a.filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{a.filename}"',
+            "Content-Length": str(a.size_bytes),
+        },
     )
 
 

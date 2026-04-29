@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -8,6 +7,7 @@ from shared.db import create_engine_and_session
 from shared.logging import configure_logging
 from shared.messaging import EventPublisher
 from shared.middleware import attach_cors
+from shared.storage import build_storage
 
 from .api.routes_maintenance import router
 from .core.settings import get_settings
@@ -25,8 +25,16 @@ async def lifespan(app: FastAPI):
         algorithm=settings.jwt_algorithm,
         issuer=settings.jwt_issuer,
     )
-    Path(settings.attachments_dir).mkdir(parents=True, exist_ok=True)
-    app.state.attachments_dir = settings.attachments_dir
+    app.state.storage_backend = settings.storage_backend
+    app.state.storage = build_storage(
+        backend=settings.storage_backend,
+        local_dir=settings.attachments_dir,
+        s3_bucket=settings.s3_bucket,
+        s3_endpoint=settings.s3_endpoint_url,
+        s3_access_key=settings.s3_access_key,
+        s3_secret_key=settings.s3_secret_key,
+        s3_region=settings.s3_region,
+    )
     app.state.publisher = EventPublisher(settings.rabbitmq_url)
     try:
         await app.state.publisher.connect()

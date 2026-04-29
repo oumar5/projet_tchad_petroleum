@@ -72,12 +72,28 @@ async def ingest_excel(
             f"Data validation failed: {validation.failed_expectations}"
         )
 
-    # Ensure default block exists
+    # Ensure the default zone TCHAD exists (created by migration 0002_add_zones,
+    # but kept idempotent here in case the ETL runs against an older DB).
     await session.execute(text("""
-        INSERT INTO production.blocks (code, name)
-        VALUES (:code, :name)
+        INSERT INTO production.zones (code, name)
+        VALUES ('TCHAD', 'Tchad — zone par défaut')
         ON CONFLICT (code) DO NOTHING
-    """), {"code": default_block, "name": f"Block {default_block}"})
+    """))
+    zone_row = (await session.execute(text(
+        "SELECT id FROM production.zones WHERE code = 'TCHAD'"
+    ))).first()
+    default_zone_id = zone_row[0]
+
+    # Ensure default block exists, attached to the default zone.
+    await session.execute(text("""
+        INSERT INTO production.blocks (code, name, zone_id)
+        VALUES (:code, :name, :zone_id)
+        ON CONFLICT (code) DO NOTHING
+    """), {
+        "code": default_block,
+        "name": f"Block {default_block}",
+        "zone_id": default_zone_id,
+    })
 
     block_row = (await session.execute(text(
         "SELECT id FROM production.blocks WHERE code = :code"
