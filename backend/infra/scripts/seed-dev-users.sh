@@ -24,8 +24,11 @@ reg_or_skip "analyst@smartbarrel.td"  "$DEV_PWD" "Analyst Dev"
 reg_or_skip "viewer@smartbarrel.td"   "$DEV_PWD" "Viewer Dev"
 
 echo "→ Promoting roles via psql..."
-docker compose -f smartbarrel.compose.yml exec -T postgres \
-  psql -U smartbarrel -d smartbarrel_db <<'SQL'
+# Compose dev: docker compose -f smartbarrel.compose.yml exec postgres
+# Stack unifie prod : on appelle docker exec sur le container nomme 'postgres'
+# avec PGPASSWORD/POSTGRES_USER pris dans son env.
+PSQL_CMD="${PSQL_CMD:-docker exec -i postgres sh -c 'PGPASSWORD=\$POSTGRES_PASSWORD psql -U \$POSTGRES_USER -d smartbarrel_db'}"
+eval "$PSQL_CMD" <<'SQL'
 INSERT INTO auth.user_roles (user_id, role_id)
 SELECT u.id, r.id FROM auth.users u, auth.roles r
 WHERE (u.email = 'admin@smartbarrel.td'    AND r.name = 'admin')
