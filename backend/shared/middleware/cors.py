@@ -4,10 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 DEV_ORIGIN_REGEX = (
     r"^https?://"
-    r"(localhost(:\d+)?"            # localhost any port
+    r"(localhost(:\d+)?"             # localhost any port
     r"|127\.0\.0\.1(:\d+)?"          # 127.0.0.1 any port
     r"|api\.localhost"               # Traefik dev host
-    r"|.*\.smartbarrel\.td)"         # prod
+    r"|.*\.smartbarrel\.td"          # prod (legacy domain)
+    r"|smart-barrel\.web\.app"       # Firebase Hosting (prod)
+    r"|smart-barrel\.firebaseapp\.com"
+    r"|.*\.oumarbenlol\.com)"        # unified-stack subdomains
     r"$"
 )
 
