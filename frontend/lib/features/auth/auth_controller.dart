@@ -9,10 +9,16 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 class AuthState {
-  const AuthState({this.user, this.loading = false, this.error});
+  const AuthState({
+    this.user,
+    this.loading = false,
+    this.error,
+    this.bootstrapped = false,
+  });
   final Map<String, dynamic>? user;
   final bool loading;
   final String? error;
+  final bool bootstrapped;
 
   bool get isAuthenticated => user != null;
 
@@ -20,6 +26,7 @@ class AuthState {
     Map<String, dynamic>? user,
     bool? loading,
     String? error,
+    bool? bootstrapped,
     bool clearUser = false,
     bool clearError = false,
   }) =>
@@ -27,12 +34,27 @@ class AuthState {
         user: clearUser ? null : (user ?? this.user),
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
+        bootstrapped: bootstrapped ?? this.bootstrapped,
       );
 }
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._repo) : super(const AuthState());
+  AuthController(this._repo) : super(const AuthState(loading: true)) {
+    _bootstrap();
+  }
   final AuthRepository _repo;
+
+  // Tente de restaurer la session au démarrage : appel /me qui, sans access
+  // token en mémoire, déclenche le 401 → l'intercepteur lit le refresh_token
+  // depuis FlutterSecureStorage et rejoue la requête avec un access frais.
+  Future<void> _bootstrap() async {
+    try {
+      final me = await _repo.me();
+      state = const AuthState(bootstrapped: true).copyWith(user: me);
+    } catch (_) {
+      state = const AuthState(bootstrapped: true);
+    }
+  }
 
   Future<void> login(String email, String password, {String? mfaCode}) async {
     state = state.copyWith(loading: true, clearError: true);
@@ -47,7 +69,7 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     await _repo.logout();
-    state = const AuthState();
+    state = const AuthState(bootstrapped: true);
   }
 }
 

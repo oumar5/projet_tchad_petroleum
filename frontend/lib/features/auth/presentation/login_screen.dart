@@ -39,6 +39,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    if (!state.bootstrapped) {
+      return Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? const [AppColors.oilBlack, Color(0xFF0E2438)]
+                  : const [Color(0xFFE9F4FB), Color(0xFFFAF5EC)],
+            ),
+          ),
+          child: const Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
     return Scaffold(
       body: Stack(
         children: [

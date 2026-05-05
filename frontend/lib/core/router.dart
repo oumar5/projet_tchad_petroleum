@@ -18,10 +18,16 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/login',
     refreshListenable: listenable,
     redirect: (context, state) {
-      final authed = ref.read(authControllerProvider).isAuthenticated;
+      final auth = ref.read(authControllerProvider);
+      // Pendant la restauration de session (refresh token → access token),
+      // on parque tout sur /login qui affiche un splash. Sans ça, la route
+      // protégée se rendrait avant que le user soit hydraté.
+      if (!auth.bootstrapped) {
+        return state.matchedLocation == '/login' ? null : '/login';
+      }
       final goingToLogin = state.matchedLocation == '/login';
-      if (!authed && !goingToLogin) return '/login';
-      if (authed && goingToLogin) return '/';
+      if (!auth.isAuthenticated && !goingToLogin) return '/login';
+      if (auth.isAuthenticated && goingToLogin) return '/';
       return null;
     },
     routes: [
